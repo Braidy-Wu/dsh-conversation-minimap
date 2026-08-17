@@ -1,12 +1,12 @@
 ---
 name: dsh-conversation-minimap
 displayName: DSH 对话迷你地图插件
-status: in_progress
+status: completed
 lastTool: dsh
 lastSession: 2026-08-17T00:00:00
 environment: office
 branch: main
-progress: 95
+progress: 100
 ---
 
 # dsh-conversation-minimap
@@ -31,8 +31,14 @@ progress: 95
 
 ## 下一步
 
-- [ ] 用户硬刷新（Ctrl+Shift+R）后确认 v0.7.8（边缘锚点不被渐隐遮住）
 - [ ] （可选）配置项接入（enabled/minPrompts 目前为客户端常量，未接线）
+- [ ] （可选）社区反馈迭代（issue / PR）
+
+## 最近完成
+
+- [x] **v1.0.0 发布**：用户确认满意 → GitHub 公开仓库
+  https://github.com/Braidy-Wu/dsh-conversation-minimap（tag v1.0.0 + Release）；
+  补 LICENSE(MIT)、README 完善、版本号 1.0.0
 
 ## 最近完成
 
