@@ -36,7 +36,7 @@ window.__ModuleLoader__.load({
     var PREVIEW_MAX_CHARS = 180
     var HIGHLIGHT_MS = 2000
     var SYNC_MAX_PAGES = 120 // safety cap for the history-sync loop
-    var SYNC_PAGE_DELAY_MS = 60 // settle time between history pages
+    var SYNC_PAGE_DELAY_MS = 40 // settle time between history pages
     var USER_KINDS = { user: true, steering: true }
     var SCROLL_SEL = '[data-conversation-scroll]'
     var ANCHOR_SEL = '[data-chat-anchor-key]'
@@ -47,13 +47,13 @@ window.__ModuleLoader__.load({
     var STYLE_ID = 'dsh-conversation-minimap-style'
     var css = [
       '.dsh-mm-seat{position:absolute;top:0;bottom:0;left:' + RAIL_LEFT + 'px;width:16px;pointer-events:none;z-index:6}',
-      '.dsh-mm-rail{position:absolute;left:0;width:16px;display:flex;flex-direction:column;justify-content:space-evenly;pointer-events:none}',
+      '.dsh-mm-rail{position:absolute;left:0;width:16px;display:flex;flex-direction:column;pointer-events:none}',
       '.dsh-mm-gap{flex:1 1 0;min-height:0}',
-      '.dsh-mm-anchor{flex:0 0 auto;box-sizing:border-box;width:4px;height:12px;margin:0 auto;border-radius:2px;background:rgba(128,128,128,.45);cursor:pointer;pointer-events:auto;transition:width .15s var(--ds-ease-in-out,cubic-bezier(.4,0,.2,1)),background-color .15s var(--ds-ease-in-out,cubic-bezier(.4,0,.2,1)),border-radius .15s var(--ds-ease-in-out,cubic-bezier(.4,0,.2,1))}',
-      '.dsh-mm-anchor:hover{width:12px;border-radius:3px;background:rgba(60,60,60,.75)}',
+      '.dsh-mm-anchor{flex:0 0 auto;box-sizing:border-box;width:14px;height:4px;margin:0 auto;border-radius:2px;background:rgba(128,128,128,.45);cursor:pointer;pointer-events:auto;transition:width .15s var(--ds-ease-in-out,cubic-bezier(.4,0,.2,1)),background-color .15s var(--ds-ease-in-out,cubic-bezier(.4,0,.2,1)),border-radius .15s var(--ds-ease-in-out,cubic-bezier(.4,0,.2,1))}',
+      '.dsh-mm-anchor:hover{width:24px;border-radius:3px;background:rgba(60,60,60,.75)}',
       '.dsh-mm-anchor.dsh-mm-active{background:var(--dsw-static-deepseek-500,#4176e6)}',
       '.dsh-mm-anchor.dsh-mm-jumped{background:var(--dsw-static-green-500,#22c55e)}',
-      '.dsh-mm-preview{position:fixed;z-index:1000;box-sizing:border-box;max-width:320px;padding:8px 10px;border-radius:8px;border:1px solid var(--dsw-alias-border-l2,rgba(128,128,128,.3));background:var(--dsw-alias-bg-layer-2,#ffffff);box-shadow:var(--dsw-shadow-lv2,0 6px 24px rgba(0,0,0,.16));color:var(--dsw-alias-label-primary,#1f1f1f);font:12px/1.5 var(--ds-font-family-code,"SF Mono",Consolas,monospace);display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;pointer-events:none;white-space:pre-wrap;word-break:break-word}',
+      '.dsh-mm-preview{position:fixed;z-index:1000;box-sizing:border-box;max-width:380px;max-height:50vh;padding:8px 10px;border-radius:8px;border:1px solid var(--dsw-alias-border-l2,rgba(128,128,128,.3));background:var(--dsw-alias-bg-layer-2,#ffffff);box-shadow:var(--dsw-shadow-lv2,0 6px 24px rgba(0,0,0,.16));color:var(--dsw-alias-label-primary,#1f1f1f);font:12px/1.5 var(--ds-font-family-code,"SF Mono",Consolas,monospace);pointer-events:none;white-space:pre-wrap;word-break:break-word;overflow-y:auto}',
       '.dsh-mm-preview-label{display:block;margin-bottom:2px;color:var(--dsw-alias-label-caption,rgba(120,120,120,.8));font:10px/1.4 var(--ds-font-family-code,monospace)}',
       '.dsh-mm-syncing{position:absolute;bottom:-2px;left:0;width:16px;text-align:center;color:var(--dsw-alias-label-caption,rgba(120,120,120,.8));font-size:9px;line-height:1;display:none;pointer-events:none}',
       '.dsh-mm-jump-highlight{outline:2px solid var(--dsw-static-deepseek-500,#4176e6);outline-offset:-2px;border-radius:8px;transition:outline-color .3s}',
@@ -77,9 +77,7 @@ window.__ModuleLoader__.load({
 
     function previewText(row) {
       try {
-        var text = (row.innerText || '').replace(/\s+/g, ' ').trim()
-        if (text.length > PREVIEW_MAX_CHARS) text = text.slice(0, PREVIEW_MAX_CHARS) + '…'
-        return text
+        return (row.innerText || '').replace(/\s+/g, ' ').trim()
       } catch (e) {
         return ''
       }
@@ -142,8 +140,12 @@ window.__ModuleLoader__.load({
         this.onResizeBound = this.onResize.bind(this)
         window.addEventListener('resize', this.onResizeBound)
 
-        this.rebuild()
-        this.syncHistory()
+        var conv = this.sessionConversation()
+        if (conv && typeof conv.loadOlder === 'function') {
+          this.syncHistory()
+        } else {
+          this.rebuild()
+        }
       } catch (e) {
         console.warn('[dsh-conversation-minimap] attach failed', e)
         this.destroy()
@@ -241,6 +243,7 @@ window.__ModuleLoader__.load({
 
     MinimapController.prototype.rebuild = function () {
       if (this.disposed) return
+      if (this.syncing) return // history still loading — render the full rail once at the end
       try {
         var next = this.collect()
         if (this.sameKeys(next)) return
@@ -269,12 +272,21 @@ window.__ModuleLoader__.load({
 
       var self = this
       this.measureOffsets()
+      var gaps = this.computeGaps()
+      var MIN_GAP = 8 // px floor so clustered anchors never overlap
+
+      function addGap(g) {
+        var el = document.createElement('div')
+        el.className = 'dsh-mm-gap'
+        el.style.flexGrow = Math.max(g, MIN_GAP).toFixed(2)
+        self.rail.appendChild(el)
+      }
 
       for (var i = 0; i < this.anchors.length; i++) {
+        addGap(gaps[i])
         var a = this.anchors[i]
         var dot = document.createElement('div')
         dot.className = 'dsh-mm-anchor'
-        dot.title = previewText(a.row)
         dot.setAttribute('data-mm-key', a.key)
         dot.addEventListener('pointerenter', function (ev) { self.onHover(ev.currentTarget) })
         dot.addEventListener('pointerleave', function () { self.hidePreview() })
@@ -284,8 +296,39 @@ window.__ModuleLoader__.load({
         a.pos = 0
         a.height = 0
       }
+      addGap(gaps[this.anchors.length])
       this.rail.appendChild(this.syncHint)
       this.updatePositions()
+    }
+
+    // Content metrics relative to the SCROLLER (the list element can sit inside
+    // sticky wrappers whose viewport offset is not the content origin).
+    MinimapController.prototype.contentMetrics = function () {
+      var sr = this.scroll.getBoundingClientRect()
+      var st = this.scroll.scrollTop
+      var composerEl = this.scroll.querySelector('[data-composer-seat]')
+      var composerH = composerEl ? composerEl.getBoundingClientRect().height : 0
+      if (!composerH) {
+        var v = getComputedStyle(this.scroll).getPropertyValue('--dsh-composer-height')
+        composerH = parseFloat(v) || 152
+      }
+      var contentH = Math.max(this.scroll.scrollHeight - composerH - 32, 1)
+      return { sr: sr, st: st, contentH: contentH }
+    }
+
+    MinimapController.prototype.computeGaps = function () {
+      if (!this.list) return []
+      var m = this.contentMetrics()
+      var gaps = []
+      var prev = 0
+      for (var i = 0; i < this.anchors.length; i++) {
+        var rect = this.anchors[i].row.getBoundingClientRect()
+        var top = rect.top - m.sr.top + m.st
+        gaps.push(top - prev)
+        prev = top + rect.height
+      }
+      gaps.push(Math.max(m.contentH - prev, 0))
+      return gaps
     }
 
     // Align the rail with the visible conversation area: below the session
@@ -309,11 +352,10 @@ window.__ModuleLoader__.load({
 
     MinimapController.prototype.updatePositions = function () {
       if (!this.list) return
-      var listRect = this.list.getBoundingClientRect()
-      var scrollTop = this.scroll.scrollTop
+      var m = this.contentMetrics()
       for (var i = 0; i < this.anchors.length; i++) {
         var rect = this.anchors[i].row.getBoundingClientRect()
-        this.anchors[i].pos = rect.top - listRect.top + scrollTop
+        this.anchors[i].pos = rect.top - m.sr.top + m.st
         this.anchors[i].height = rect.height
       }
       this.updateActive()
