@@ -6,7 +6,7 @@ lastTool: dsh
 lastSession: 2026-08-17T00:00:00
 environment: office
 branch: main
-progress: 90
+progress: 95
 ---
 
 # dsh-conversation-minimap
@@ -31,9 +31,15 @@ progress: 90
 
 ## 下一步
 
-- [ ] 用户硬刷新（Ctrl+Shift+R）后实测：rail 出现、锚点数 = 全部历史 Prompt
-- [ ] 反馈后微调：位置、大小、颜色、minPrompts 阈值
-- [ ] （可选）配置项接入（enabled/minPrompts/anchorSize 目前为客户端常量，未接线）
+- [ ] 用户硬刷新（Ctrl+Shift+R）后确认 v0.4 观感与交互
+- [ ] （可选）配置项接入（enabled/minPrompts 目前为客户端常量，未接线）
+
+## 最近完成
+
+- [x] **v0.4（用户反馈）**：① rail 边界对齐可视区（顶部避开会话头、底部避开输入框，
+  底部标记不再被遮挡）；② GPT 风格胶囊标记（4×12px，hover 加宽到 12px 加深）；
+  ③ 锚点等距分布（space-evenly，实测间距 59-60px 均匀）；实测 17 锚点全部可见、
+  active 蓝色指示器正常。冒烟测试 10 断言全过 + GUI 实测通过
 
 ## 最近完成
 
