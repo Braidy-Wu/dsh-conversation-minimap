@@ -86,12 +86,6 @@ window.__ModuleLoader__.load({
     }
 
 
-    function dbg() {
-      try {
-        if (typeof console !== 'undefined' && console.info) console.info('[dsh-conversation-minimap]', Array.prototype.join.call(arguments, ' '))
-      } catch (e) {}
-    }
-
     function sleep(ms) {
       return new Promise(function (resolve) { setTimeout(resolve, ms) })
     }
@@ -119,7 +113,6 @@ window.__ModuleLoader__.load({
     }
 
     MinimapController.prototype.attach = function () {
-      dbg('attach: sessionId=', this.sessionId)
       if (this.disposed || !this.parent) return
       try {
         var pos = getComputedStyle(this.parent).position
@@ -175,23 +168,34 @@ window.__ModuleLoader__.load({
     MinimapController.prototype.sessionConversation = function () {
       try {
         if (!this.ctx || !this.ctx.sessions || !this.sessionId) return null
-        var scoped = this.ctx.sessions.scope(this.sessionId)
-        return scoped && scoped.conversation ? scoped.conversation : null
+        // binding() returns a plain object ({ sessionId, session, ctx }) — the
+        // dynamic facade denies cordis Contexts but passes plain objects, so
+        // binding.session is reachable (ctx.sessions.scope(id) would return a
+        // Context and get denied by the guard).
+        var binding = this.ctx.sessions.binding(this.sessionId)
+        return binding && binding.session ? binding.session : null
       } catch (e) {
         return null
       }
     }
 
     MinimapController.prototype.firstAnchorKey = function () {
-      var first = this.list ? this.list.querySelector(ANCHOR_SEL) : null
+      var root = this.list || this.scroll
+      var first = root ? root.querySelector(ANCHOR_SEL) : null
       return first ? first.getAttribute('data-chat-anchor-key') : null
     }
 
     MinimapController.prototype.syncHistory = function () {
       var self = this
       var conv = this.sessionConversation()
-      dbg('syncHistory: conv=', !!conv, 'loadOlder=', !!(conv && typeof conv.loadOlder === 'function'))
       if (!conv || typeof conv.loadOlder !== 'function') return
+      if (!this.list) {
+        // Conversation rows not rendered yet — retry shortly (MountManager also
+        // re-attaches once rows appear).
+        var self = this
+        setTimeout(function () { if (!self.disposed && !self.syncing) self.syncHistory() }, 600)
+        return
+      }
       this.syncing = true
       if (this.syncHint) this.syncHint.style.display = 'block'
       ;(async function () {
@@ -433,7 +437,6 @@ window.__ModuleLoader__.load({
     MountManager.prototype.start = function () {
       var self = this
       try {
-        dbg('start: ctx.sessions=', !!(this.ctx && this.ctx.sessions), 'list=', !!(this.ctx && this.ctx.sessions && this.ctx.sessions.list))
         ensureStyle()
         this.check()
         this.timer = setInterval(function () { self.check() }, 600)
@@ -452,11 +455,8 @@ window.__ModuleLoader__.load({
       try {
         if (!this.ctx || !this.ctx.sessions || !this.ctx.sessions.list) return null
         var snap = this.ctx.sessions.list.getSnapshot()
-        var id = snap && snap.current ? snap.current : null
-        dbg('currentSessionId=', id, 'phase=', snap && snap.phase)
-        return id
+        return snap && snap.current ? snap.current : null
       } catch (e) {
-        dbg('currentSessionId error:', e && e.message)
         return null
       }
     }
@@ -465,7 +465,6 @@ window.__ModuleLoader__.load({
       try {
         var scroll = findScroll()
         var sessionId = this.currentSessionId()
-        dbg('check: scroll=', !!scroll, 'sessionId=', sessionId, 'hasController=', !!this.controller)
         if (!scroll || !sessionId) {
           if (this.controller) {
             this.controller.destroy()
@@ -476,7 +475,16 @@ window.__ModuleLoader__.load({
         if (this.controller &&
             this.controller.scroll === scroll &&
             this.controller.sessionId === sessionId &&
-            !this.controller.disposed) return
+            !this.controller.disposed) {
+          // The conversation view rendered after we attached (hero/loading
+          // first): re-attach so the history sync runs against real rows.
+          if (this.controller.list === null && scroll.querySelector(ANCHOR_SEL)) {
+            this.controller.destroy()
+            this.controller = null
+          } else {
+            return
+          }
+        }
         if (this.controller) this.controller.destroy()
         this.controller = new MinimapController(scroll, sessionId, this.ctx)
         this.controller.attach()
@@ -503,6 +511,7 @@ window.__ModuleLoader__.load({
     }
 
     exports.apply = apply
+    exports.inject = ['sessions']
     return module.exports
   }
 })
