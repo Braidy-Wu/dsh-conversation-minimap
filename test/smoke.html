@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>dsh-conversation-minimap smoke test</title>
+<style>
+  body { margin: 0; font-family: sans-serif; }
+  #wrapper { position: relative; height: 600px; border: 1px solid #ccc; }
+  #scroll { height: 600px; overflow-y: auto; background: #fafafa; }
+  .col { padding: 8px; }
+  .row { padding: 12px; margin: 8px 0; border-radius: 8px; background: #fff; border: 1px solid #eee; }
+  .row.user { background: #eaf1ff; }
+  #results { position: fixed; top: 0; right: 0; width: 420px; max-height: 100%; overflow: auto;
+             background: #111; color: #7f7; font: 12px/1.6 monospace; padding: 12px; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+<div id="wrapper">
+  <div id="scroll" data-conversation-scroll>
+    <div class="col">
+      <!-- 6 user prompts + assistant rows in between; total content taller than viewport -->
+      <div class="row user" data-chat-anchor-key="u1" data-chat-flow-kind="user">Prompt 1: 帮我介绍 DeepSeek Harness 的基本概念和使用方法，越详细越好，包括安装、配置、插件系统等等。</div>
+      <div class="row assistant" data-chat-anchor-key="a1" data-chat-flow-kind="assistant-step">回答内容一，包含一些解释文字。</div>
+      <div class="row user" data-chat-anchor-key="u2" data-chat-flow-kind="user">Prompt 2: 现在开始开发，先创建项目骨架。</div>
+      <div class="row assistant" data-chat-anchor-key="a2" data-chat-flow-kind="assistant-step">回答内容二。</div>
+      <div class="row user" data-chat-anchor-key="u3" data-chat-flow-kind="user">Prompt 3: 添加主题插件，调整字体和背景颜色。</div>
+      <div class="row assistant" data-chat-anchor-key="a3" data-chat-flow-kind="assistant-step">回答内容三。</div>
+      <div class="row user" data-chat-anchor-key="u4" data-chat-flow-kind="user">Prompt 4: 查一下有没有记忆插件，跨会话的那种。</div>
+      <div class="row assistant" data-chat-anchor-key="a4" data-chat-flow-kind="assistant-step">回答内容四。</div>
+      <div class="row user" data-chat-anchor-key="u5" data-chat-flow-kind="user">Prompt 5: 帮我看看这两张截图里红框部分是什么组件。</div>
+      <div class="row assistant" data-chat-anchor-key="a5" data-chat-flow-kind="assistant-step">回答内容五。</div>
+      <div class="row user" data-chat-anchor-key="u6" data-chat-flow-kind="steering">Prompt 6 (steering): 等一下，先别继续，回答我一个问题。</div>
+      <div class="row assistant" data-chat-anchor-key="a6" data-chat-flow-kind="assistant-step">回答内容六。</div>
+      <div style="height:400px"></div>
+    </div>
+  </div>
+</div>
+
+<pre id="results">running…</pre>
+
+<script>
+  // 1. Stub the module loader BEFORE client.js loads.
+  window.__ModuleLoader__ = {
+    load: function (spec) { window.__minimapSpec = spec }
+  }
+</script>
+<script src="../client.js"></script>
+<script>
+  // 2. Mount the plugin against a stub ctx and run assertions.
+  (function () {
+    var results = []
+    function log(s) { results.push(s); document.getElementById('results').textContent = results.join('\n') }
+    function fail(s) { log('FAIL: ' + s) }
+    function ok(s) { log('ok: ' + s) }
+
+    try {
+      var spec = window.__minimapSpec
+      if (!spec || spec.id !== 'dsh-conversation-minimap') throw new Error('loader spec missing')
+      ok('loader spec captured: ' + spec.id)
+
+      var mod = spec.factory(function () { throw new Error('no requires expected') })
+      if (typeof mod.apply !== 'function') throw new Error('apply not exported')
+      var cleanupHolder = {}
+      mod.apply({ effect: function (fn, name) { var c = fn(); cleanupHolder.cleanup = c; ok('ctx.effect ran: ' + name); return c } })
+
+      var scroll = document.getElementById('scroll')
+
+      // 3. Wait for the controller to attach and render the rail.
+      var attempts = 0
+      var timer = setInterval(function () {
+        attempts++
+        var seat = document.querySelector('.dsh-mm-seat')
+        var dots = document.querySelectorAll('.dsh-mm-anchor')
+        if (seat && dots.length) {
+          clearInterval(timer)
+          try {
+            ok('rail mounted, anchors=' + dots.length + ' (expect 6)')
+            if (dots.length !== 6) fail('anchor count mismatch')
+
+            // --- hover: preview appears with prompt text ---
+            var first = dots[0]
+            first.dispatchEvent(new PointerEvent('pointerenter', { bubbles: true }))
+            setTimeout(function () {
+              var prev = document.querySelector('.dsh-mm-preview')
+              if (prev) {
+                var text = prev.textContent
+                ok('preview shown: ' + text.slice(0, 40) + '…')
+                if (text.indexOf('Prompt 1') === -1) fail('preview text mismatch')
+              } else {
+                fail('preview not shown on hover')
+              }
+              first.dispatchEvent(new PointerEvent('pointerleave', { bubbles: true }))
+              if (document.querySelector('.dsh-mm-preview')) fail('preview not hidden on leave')
+
+              // --- click: scroll + highlight ---
+              var last = dots[5]
+              last.click()
+              setTimeout(function () {
+                var st = scroll.scrollTop
+                var hl = document.querySelector('.dsh-mm-jump-highlight')
+                ok('after click scrollTop=' + st + ' (expect >0), highlight=' + (hl ? hl.getAttribute('data-chat-anchor-key') : 'none'))
+                if (st <= 0) fail('scroll did not move')
+                if (!hl) fail('no highlight on click')
+                if (hl && hl.getAttribute('data-chat-anchor-key') !== 'u6') fail('highlight wrong row')
+
+                // --- scroll: active indicator ---
+                scroll.scrollTop = scroll.scrollHeight
+                scroll.dispatchEvent(new Event('scroll'))
+                setTimeout(function () {
+                  var active = document.querySelectorAll('.dsh-mm-active').length
+                  ok('active indicator after scroll: ' + active + ' (expect 1)')
+                  if (active !== 1) fail('active indicator count mismatch')
+
+                  // --- dynamic append: new user message triggers rebuild ---
+                  var col = document.querySelector('.col')
+                  var nr = document.createElement('div')
+                  nr.className = 'row user'
+                  nr.setAttribute('data-chat-anchor-key', 'u7')
+                  nr.setAttribute('data-chat-flow-kind', 'user')
+                  nr.textContent = 'Prompt 7: 新消息追加测试'
+                  col.appendChild(nr)
+                  setTimeout(function () {
+                    var dots2 = document.querySelectorAll('.dsh-mm-anchor')
+                    ok('after append anchors=' + dots2.length + ' (expect 7)')
+                    if (dots2.length !== 7) fail('rebuild on append failed')
+
+                    // --- lifecycle: remove container -> controller detaches ---
+                    var wrapper = document.getElementById('wrapper')
+                    wrapper.remove()
+                    setTimeout(function () {
+                      var seat2 = document.querySelector('.dsh-mm-seat')
+                      ok('after container removal seat exists=' + !!seat2 + ' (expect false)')
+                      if (seat2) fail('controller not detached')
+
+                      if (typeof cleanupHolder.cleanup === 'function') cleanupHolder.cleanup()
+                      else fail('no cleanup captured')
+                      log('ALL DONE')
+                    }, 1200)
+                  }, 400)
+                }, 400)
+              }, 700)
+            }, 100)
+          } catch (e) {
+            clearInterval(timer)
+            fail('test exception: ' + e.message)
+          }
+        } else if (attempts > 30) {
+          clearInterval(timer)
+          fail('rail never mounted (attempts=' + attempts + ', seat=' + !!seat + ')')
+        }
+      }, 100)
+    } catch (e) {
+      fail('boot exception: ' + e.message)
+    }
+  })()
+</script>
+</body>
+</html>

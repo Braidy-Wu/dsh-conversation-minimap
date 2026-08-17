@@ -1,0 +1,16 @@
+# dsh-conversation-minimap bundle layer.
+# Prompt-based conversation minimap: vertical navigation rail on the left edge
+# of long conversations. Each rail anchor corresponds to one user prompt;
+# hover shows the prompt preview, click scrolls to that message.
+# Config (all optional):
+#   minPrompts   - show the rail only when the conversation has at least this
+#                  many user prompts (default 4; 0 = always show)
+#   anchorSize   - anchor dot diameter in px (default 6)
+#   enabled      - master switch (default true)
+- insert:
+    - id: conversation-minimap
+      name: dsh-conversation-minimap
+      config:
+        enabled: true
+        minPrompts: 4
+        anchorSize: 6
