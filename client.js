@@ -1,4 +1,4 @@
-// dsh-conversation-minimap v0.1 — client bundle.
+// dsh-conversation-minimap v0.2 — client bundle.
 // Prompt-based conversation minimap for the DSH Web GUI.
 //
 // Product: a vertical navigation rail on the LEFT edge of long conversations.
@@ -8,18 +8,18 @@
 //   - Click an anchor -> smooth-scroll to the corresponding message and
 //     flash-highlight it for 2s.
 //   - The rail maps the FULL conversation height: gaps between anchors are
-//     proportional to the distances between the user messages (flex-grow),
-//     so it adapts to any window size without JS on resize.
+//     proportional to the distances between the user messages (flex-grow).
+//
+// v0.2: the DSH conversation view renders a WINDOW of the most recent
+// messages (older pages load on demand), so on mount we drive the official
+// `ctx.sessions.scope(id).conversation.loadOlder()` API page by page until
+// the whole history is in the DOM. Only then are all user prompts visible
+// as anchors. The rail shows a small "loading history" hint meanwhile.
 //
 // Implementation notes:
-//   - Official web-shell closure-factory shape (window.__ModuleLoader__.load);
-//     plain JS, no TS/JSX/import statements.
-//   - DOM-only: observes the rendered conversation, never touches internal
-//     stores. Everything is guarded — on any unexpected failure the minimap
-//     silently disables itself instead of breaking the GUI.
-//   - Mount: an absolutely positioned seat inside the conversation viewport's
-//     relative wrapper (the ChatView root), so the rail stays put while the
-//     content scrolls underneath it.
+//   - Official web-shell closure-factory shape; plain JS, no build step.
+//   - DOM-only + the public loadOlder seam; everything guarded — any
+//     unexpected failure silently disables the minimap only.
 
 window.__ModuleLoader__.load({
   id: 'dsh-conversation-minimap',
@@ -35,6 +35,8 @@ window.__ModuleLoader__.load({
     var RAIL_LEFT = 10 // rail distance from the conversation viewport left edge, px
     var PREVIEW_MAX_CHARS = 180
     var HIGHLIGHT_MS = 2000
+    var SYNC_MAX_PAGES = 120 // safety cap for the history-sync loop
+    var SYNC_PAGE_DELAY_MS = 60 // settle time between history pages
     var USER_KINDS = { user: true, steering: true }
     var SCROLL_SEL = '[data-conversation-scroll]'
     var ANCHOR_SEL = '[data-chat-anchor-key]'
@@ -53,6 +55,7 @@ window.__ModuleLoader__.load({
       '.dsh-mm-anchor.dsh-mm-jumped{background:var(--dsw-static-green-500,#22c55e)}',
       '.dsh-mm-preview{position:fixed;z-index:1000;box-sizing:border-box;max-width:320px;padding:8px 10px;border-radius:8px;border:1px solid var(--dsw-alias-border-l2,rgba(128,128,128,.3));background:var(--dsw-alias-bg-layer-2,#ffffff);box-shadow:var(--dsw-shadow-lv2,0 6px 24px rgba(0,0,0,.16));color:var(--dsw-alias-label-primary,#1f1f1f);font:12px/1.5 var(--ds-font-family-code,"SF Mono",Consolas,monospace);display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;pointer-events:none;white-space:pre-wrap;word-break:break-word}',
       '.dsh-mm-preview-label{display:block;margin-bottom:2px;color:var(--dsw-alias-label-caption,rgba(120,120,120,.8));font:10px/1.4 var(--ds-font-family-code,monospace)}',
+      '.dsh-mm-syncing{position:absolute;bottom:-2px;left:0;width:16px;text-align:center;color:var(--dsw-alias-label-caption,rgba(120,120,120,.8));font-size:9px;line-height:1;display:none;pointer-events:none}',
       '.dsh-mm-jump-highlight{outline:2px solid var(--dsw-static-deepseek-500,#4176e6);outline-offset:-2px;border-radius:8px;transition:outline-color .3s}',
       '.dsh-mm-jump-highlight.dsh-mm-fade{outline-color:transparent}'
     ].join('\n')
@@ -82,29 +85,35 @@ window.__ModuleLoader__.load({
       }
     }
 
+    function sleep(ms) {
+      return new Promise(function (resolve) { setTimeout(resolve, ms) })
+    }
+
     // ------------------------------------------------------------------
     // Minimap controller — one instance per mounted conversation viewport
     // ------------------------------------------------------------------
-    function MinimapController(scroll) {
+    function MinimapController(scroll, sessionId, ctx) {
       this.scroll = scroll
+      this.sessionId = sessionId || null
+      this.ctx = ctx || null
       this.parent = scroll.parentElement
       this.seat = null
       this.rail = null
-      this.anchors = [] // { key, row, gapEl, anchorEl, pos, height }
+      this.syncHint = null
+      this.anchors = []
       this.list = null
       this.observer = null
       this.previewEl = null
       this.highlightTimer = null
       this.rafPending = false
+      this.syncing = false
       this.disposed = false
       this.parentWasStatic = false
-      this.attached = false
     }
 
     MinimapController.prototype.attach = function () {
       if (this.disposed || !this.parent) return
       try {
-        // The seat must be absolutely positioned against a relative wrapper.
         var pos = getComputedStyle(this.parent).position
         if (pos === 'static') {
           this.parent.style.position = 'relative'
@@ -114,22 +123,24 @@ window.__ModuleLoader__.load({
         this.seat.className = 'dsh-mm-seat'
         this.rail = document.createElement('div')
         this.rail.className = 'dsh-mm-rail'
+        this.syncHint = document.createElement('div')
+        this.syncHint.className = 'dsh-mm-syncing'
+        this.syncHint.textContent = '⋯'
+        this.rail.appendChild(this.syncHint)
         this.seat.appendChild(this.rail)
         this.parent.appendChild(this.seat)
 
-        // MutationObserver on the flow list -> debounced rebuild.
         this.list = this.findList()
         this.observer = new MutationObserver(() => this.scheduleRebuild())
         if (this.list) {
           this.observer.observe(this.list, { childList: true, subtree: true })
         }
 
-        // Active indicator follows scroll (bound handler so `this` stays the controller).
         this.onScrollBound = this.onScroll.bind(this)
         this.scroll.addEventListener('scroll', this.onScrollBound, { passive: true })
 
         this.rebuild()
-        this.attached = true
+        this.syncHistory()
       } catch (e) {
         console.warn('[dsh-conversation-minimap] attach failed', e)
         this.destroy()
@@ -152,6 +163,49 @@ window.__ModuleLoader__.load({
       })
     }
 
+    // --- History sync: pull older pages until the conversation start ---
+    MinimapController.prototype.sessionConversation = function () {
+      try {
+        if (!this.ctx || !this.ctx.sessions || !this.sessionId) return null
+        var scoped = this.ctx.sessions.scope(this.sessionId)
+        return scoped && scoped.conversation ? scoped.conversation : null
+      } catch (e) {
+        return null
+      }
+    }
+
+    MinimapController.prototype.firstAnchorKey = function () {
+      var first = this.list ? this.list.querySelector(ANCHOR_SEL) : null
+      return first ? first.getAttribute('data-chat-anchor-key') : null
+    }
+
+    MinimapController.prototype.syncHistory = function () {
+      var self = this
+      var conv = this.sessionConversation()
+      if (!conv || typeof conv.loadOlder !== 'function') return
+      this.syncing = true
+      if (this.syncHint) this.syncHint.style.display = 'block'
+      ;(async function () {
+        try {
+          for (var i = 0; i < SYNC_MAX_PAGES && !self.disposed; i++) {
+            var before = self.firstAnchorKey()
+            await conv.loadOlder()
+            await sleep(SYNC_PAGE_DELAY_MS)
+            if (self.disposed) return
+            var after = self.firstAnchorKey()
+            if (after === before) break // history exhausted
+          }
+        } catch (e) {
+          console.warn('[dsh-conversation-minimap] history sync stopped', e)
+        } finally {
+          if (self.disposed) return
+          self.syncing = false
+          if (self.syncHint) self.syncHint.style.display = 'none'
+          self.rebuild()
+        }
+      })()
+    }
+
     MinimapController.prototype.collect = function () {
       if (!this.list) return []
       var out = []
@@ -169,7 +223,6 @@ window.__ModuleLoader__.load({
       if (this.disposed) return
       try {
         var next = this.collect()
-        // Skip rebuild when the user-anchor set is unchanged (streaming churn).
         if (this.sameKeys(next)) return
         this.anchors = next
         this.render()
@@ -188,8 +241,8 @@ window.__ModuleLoader__.load({
     }
 
     MinimapController.prototype.render = function () {
-      // Clear previous rail content.
       while (this.rail.firstChild) this.rail.removeChild(this.rail.firstChild)
+      this.rail.appendChild(this.syncHint)
       var shown = this.anchors.length >= MIN_PROMPTS
       this.seat.style.display = shown ? '' : 'none'
       if (!shown) return
@@ -221,8 +274,7 @@ window.__ModuleLoader__.load({
         a.height = 0
       }
       addGap(gaps[this.anchors.length])
-
-      // Recompute content-space positions for the active indicator.
+      this.rail.appendChild(this.syncHint)
       this.updatePositions()
     }
 
@@ -360,11 +412,13 @@ window.__ModuleLoader__.load({
     }
 
     // ------------------------------------------------------------------
-    // Mount manager — tracks the live conversation viewport
+    // Mount manager — tracks the live conversation viewport + session
     // ------------------------------------------------------------------
-    function MountManager() {
+    function MountManager(ctx) {
+      this.ctx = ctx || null
       this.controller = null
       this.timer = null
+      this.lastSessionId = null
     }
 
     MountManager.prototype.start = function () {
@@ -372,25 +426,45 @@ window.__ModuleLoader__.load({
       try {
         ensureStyle()
         this.check()
-        this.timer = setInterval(function () { self.check() }, 800)
+        this.timer = setInterval(function () { self.check() }, 600)
+        // Re-check when the active session changes.
+        try {
+          if (this.ctx && this.ctx.sessions && this.ctx.sessions.list) {
+            this.ctx.sessions.list.subscribe(function () { self.check() })
+          }
+        } catch (e) { /* ignore */ }
       } catch (e) {
         console.warn('[dsh-conversation-minimap] start failed', e)
+      }
+    }
+
+    MountManager.prototype.currentSessionId = function () {
+      try {
+        if (!this.ctx || !this.ctx.sessions || !this.ctx.sessions.list) return null
+        var snap = this.ctx.sessions.list.getSnapshot()
+        return snap && snap.current ? snap.current : null
+      } catch (e) {
+        return null
       }
     }
 
     MountManager.prototype.check = function () {
       try {
         var scroll = findScroll()
-        if (!scroll) {
+        var sessionId = this.currentSessionId()
+        if (!scroll || !sessionId) {
           if (this.controller) {
             this.controller.destroy()
             this.controller = null
           }
           return
         }
-        if (this.controller && this.controller.scroll === scroll && !this.controller.disposed) return
+        if (this.controller &&
+            this.controller.scroll === scroll &&
+            this.controller.sessionId === sessionId &&
+            !this.controller.disposed) return
         if (this.controller) this.controller.destroy()
-        this.controller = new MinimapController(scroll)
+        this.controller = new MinimapController(scroll, sessionId, this.ctx)
         this.controller.attach()
       } catch (e) {
         console.warn('[dsh-conversation-minimap] check failed', e)
@@ -408,7 +482,7 @@ window.__ModuleLoader__.load({
     // ------------------------------------------------------------------
     function apply(ctx) {
       ctx.effect(function () {
-        var manager = new MountManager()
+        var manager = new MountManager(ctx)
         manager.start()
         return function () { manager.stop() }
       }, 'dsh-conversation-minimap: mount')
