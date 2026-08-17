@@ -6,7 +6,7 @@ lastTool: dsh
 lastSession: 2026-08-17T00:00:00
 environment: office
 branch: main
-progress: 80
+progress: 90
 ---
 
 # dsh-conversation-minimap
@@ -31,14 +31,21 @@ progress: 80
 
 ## 下一步
 
-- [ ] 用户重启 dsh web 后实测反馈（rail 显示 / 悬停预览 / 点击跳转）
+- [ ] 用户硬刷新（Ctrl+Shift+R）后实测：rail 出现、锚点数 = 全部历史 Prompt
 - [ ] 反馈后微调：位置、大小、颜色、minPrompts 阈值
 - [ ] （可选）配置项接入（enabled/minPrompts/anchorSize 目前为客户端常量，未接线）
 
 ## 最近完成
 
+- [x] **v0.2 关键修复**：DSH 会话视图是窗口化的（只渲染最近 ~150 节点，历史消息不在 DOM）。
+  v0.1 只收集到窗口内 3 条 user 行 < 阈值 4 → rail 隐藏。v0.2 挂载时用官方
+  `ctx.sessions.scope(id).conversation.loadOlder()` 逐页拉全历史（检测首行 key 变化判断尽头，
+  上限 120 页），全部 Prompt 成为锚点；期间 rail 显示 "⋯" 加载提示
+- [x] v0.2 冒烟测试 10 项断言全过（窗口→同步→6 锚点→预览→点击→active→追加→卸载），0 控制台错误
+- [x] 排查"重启后不显示"：服务器未真正重启（启动包装脚本端口占用时只开浏览器）。
+  客户端改动无需重启服务器，硬刷新页面即可（link 安装实时生效）
 - [x] client.js 核心实现（rail 渲染 / 悬停预览 / 点击跳转 / 位置指示器 / 动态追加重建）
-- [x] Playwright 模拟 DOM 烟雾测试 8/8 通过、0 控制台错误（含修复 onScroll this 绑定 bug）
+- [x] Playwright 模拟 DOM 烟雾测试（含修复 onScroll this 绑定 bug）
 - [x] 已安装进 web profile（`dsh plugin add link:...`，bundle 已挂载）
 - [x] 项目骨架：git init、package.json、cordis.patch.yml、index.js、.gitignore
 - [x] 注册 ROUTING（driver=dsh）
