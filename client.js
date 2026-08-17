@@ -85,6 +85,13 @@ window.__ModuleLoader__.load({
       }
     }
 
+
+    function dbg() {
+      try {
+        if (typeof console !== 'undefined' && console.info) console.info('[dsh-conversation-minimap]', Array.prototype.join.call(arguments, ' '))
+      } catch (e) {}
+    }
+
     function sleep(ms) {
       return new Promise(function (resolve) { setTimeout(resolve, ms) })
     }
@@ -112,6 +119,7 @@ window.__ModuleLoader__.load({
     }
 
     MinimapController.prototype.attach = function () {
+      dbg('attach: sessionId=', this.sessionId)
       if (this.disposed || !this.parent) return
       try {
         var pos = getComputedStyle(this.parent).position
@@ -182,6 +190,7 @@ window.__ModuleLoader__.load({
     MinimapController.prototype.syncHistory = function () {
       var self = this
       var conv = this.sessionConversation()
+      dbg('syncHistory: conv=', !!conv, 'loadOlder=', !!(conv && typeof conv.loadOlder === 'function'))
       if (!conv || typeof conv.loadOlder !== 'function') return
       this.syncing = true
       if (this.syncHint) this.syncHint.style.display = 'block'
@@ -424,6 +433,7 @@ window.__ModuleLoader__.load({
     MountManager.prototype.start = function () {
       var self = this
       try {
+        dbg('start: ctx.sessions=', !!(this.ctx && this.ctx.sessions), 'list=', !!(this.ctx && this.ctx.sessions && this.ctx.sessions.list))
         ensureStyle()
         this.check()
         this.timer = setInterval(function () { self.check() }, 600)
@@ -442,8 +452,11 @@ window.__ModuleLoader__.load({
       try {
         if (!this.ctx || !this.ctx.sessions || !this.ctx.sessions.list) return null
         var snap = this.ctx.sessions.list.getSnapshot()
-        return snap && snap.current ? snap.current : null
+        var id = snap && snap.current ? snap.current : null
+        dbg('currentSessionId=', id, 'phase=', snap && snap.phase)
+        return id
       } catch (e) {
+        dbg('currentSessionId error:', e && e.message)
         return null
       }
     }
@@ -452,6 +465,7 @@ window.__ModuleLoader__.load({
       try {
         var scroll = findScroll()
         var sessionId = this.currentSessionId()
+        dbg('check: scroll=', !!scroll, 'sessionId=', sessionId, 'hasController=', !!this.controller)
         if (!scroll || !sessionId) {
           if (this.controller) {
             this.controller.destroy()
