@@ -31,11 +31,13 @@ progress: 100
 
 ## 下一步
 
+- [ ] 等 awesome-dsh-plugin PR #62 合并（网站自动同步收录）
 - [ ] （可选）配置项接入（enabled/minPrompts 目前为客户端常量，未接线）
-- [ ] （可选）社区反馈迭代（issue / PR）
 
 ## 最近完成
 
+- [x] **社区收录**：仓库加 dsh-plugin topic；fork awesome-dsh-plugin 双语 README 各加
+  一行（主题与外观区），PR #62 已提交
 - [x] **v1.0.0 发布**：用户确认满意 → GitHub 公开仓库
   https://github.com/Braidy-Wu/dsh-conversation-minimap（tag v1.0.0 + Release）；
   补 LICENSE(MIT)、README 完善、版本号 1.0.0
