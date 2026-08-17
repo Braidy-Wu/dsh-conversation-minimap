@@ -122,6 +122,7 @@ window.__ModuleLoader__.load({
       this.fishY = null
       this.resetTimer = null
       this.wasAtBottom = false
+      this.ignoreScrollUntil = 0 // resize-anchoring scrolls must not clear the latch
       this.rafPending = false
       this.syncing = false
       this.disposed = false
@@ -181,6 +182,7 @@ window.__ModuleLoader__.load({
 
     MinimapController.prototype.onResize = function () {
       if (this.disposed) return
+      this.ignoreScrollUntil = Date.now() + 500
       this.measureOffsets()
       this.updateShift()
       // A top-anchored window resize (dragging the top edge down) keeps the
@@ -493,7 +495,11 @@ window.__ModuleLoader__.load({
     MinimapController.prototype.onScroll = function () {
       var self = this
       try {
-        this.wasAtBottom = this.scroll.scrollTop + this.scroll.clientHeight >= this.scroll.scrollHeight - 40
+        // Scroll events fired while a resize is settling are browser/DSH scroll
+        // anchoring, not user scrolling — keep the bottom latch intact.
+        if (Date.now() >= this.ignoreScrollUntil) {
+          this.wasAtBottom = this.scroll.scrollTop + this.scroll.clientHeight >= this.scroll.scrollHeight - 40
+        }
       } catch (e) { /* ignore */ }
       if (this.rafPending) return
       this.rafPending = true
