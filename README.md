@@ -12,6 +12,8 @@ DeepSeek Harness (DSH) Web GUI 插件：**Prompt 导航迷你地图（Prompt-bas
 - **交互**：悬停显示完整 Prompt 预览；点击平滑滚动跳转到对应消息并高亮 2 秒（连续点击不留残影）
 - **全历史**：自动通过官方 `loadOlder` API 拉取完整历史，长对话的所有 Prompt 都能跳转
 
+![screenshot](docs/screenshot.png)
+
 ## 安装
 
 ```sh
