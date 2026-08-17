@@ -1,6 +1,6 @@
 {
   "name": "dsh-conversation-minimap",
-  "version": "1.1.1",
+  "version": "1.2.0",
   "description": "DSH Web GUI prompt-based conversation minimap: a vertical navigation rail on the left of long conversations, each anchor = one user prompt; hover shows the prompt preview, click jumps to that message.",
   "keywords": [
     "deepseek-harness",
@@ -26,7 +26,9 @@
     "index.js",
     "client.js",
     "cordis.patch.yml",
-    "README.md"
+    "README.md",
+    "README.zh.md",
+    "docs/screenshot.png"
   ],
   "author": "Braidy-Wu",
   "license": "MIT",

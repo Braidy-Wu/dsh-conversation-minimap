@@ -1,25 +1,29 @@
-// dsh-conversation-minimap v0.2 — client bundle.
+// dsh-conversation-minimap v1.2.0 — client bundle.
 // Prompt-based conversation minimap for the DSH Web GUI.
 //
 // Product: a vertical navigation rail on the LEFT edge of long conversations.
-//   - Each anchor = one user prompt (DOM rows with data-chat-flow-kind
-//     "user" / "steering", anchored by data-chat-anchor-key).
-//   - Hover an anchor -> fish-eye grow + floating preview of that prompt.
-//   - Click an anchor -> smooth-scroll to the corresponding message and
-//     flash-highlight it for 2s.
-//   - The rail maps the FULL conversation height: gaps between anchors are
-//     proportional to the distances between the user messages (flex-grow).
+//   - One evenly-spaced horizontal capsule per user prompt (DOM rows with
+//     data-chat-flow-kind "user"/"steering", keyed by data-chat-anchor-key).
+//   - The anchor column is centered in the rail; when it overflows (many
+//     prompts / short window), the visible window centers on the ACTIVE
+//     anchor and the edges fade via a mask — anchors never exceed the rail.
+//   - Hover: fish-eye bell curve grows the bars rightward under the cursor,
+//     plus a floating preview of the full prompt.
+//   - Click: smooth-scroll to the message, flash-highlight it for 2s.
+//   - Active marker: a blue glowing bar follows the current prompt (switches
+//     when the prompt's center crosses the viewport's center); on window
+//     resize the view snaps back to the bottom if the user was there.
 //
-// v0.2: the DSH conversation view renders a WINDOW of the most recent
-// messages (older pages load on demand), so on mount we drive the official
-// `ctx.sessions.scope(id).conversation.loadOlder()` API page by page until
-// the whole history is in the DOM. Only then are all user prompts visible
-// as anchors. The rail shows a small "loading history" hint meanwhile.
+// History: the DSH conversation view renders a WINDOW of the most recent
+// messages, so on mount we pull older pages via the official
+// `ctx.sessions.binding(id).session.loadOlder()` API until the whole history
+// is in the DOM — every prompt in a long conversation is reachable. Nothing
+// renders until the sync finishes (the full rail appears at once).
 //
 // Implementation notes:
 //   - Official web-shell closure-factory shape; plain JS, no build step.
-//   - DOM-only + the public loadOlder seam; everything guarded — any
-//     unexpected failure silently disables the minimap only.
+//   - DOM + the public loadOlder seam only; everything guarded — any
+//     unexpected failure silently disables the minimap, never the GUI.
 
 window.__ModuleLoader__.load({
   id: 'dsh-conversation-minimap',
@@ -43,7 +47,6 @@ window.__ModuleLoader__.load({
     var ENABLED = __cfg.enabled === undefined ? true : !!__cfg.enabled // master switch
     var ANCHOR_H = cfgNum(__cfg.anchorSize, 2, 8, 3) // anchor bar height, px (configurable)
     var RAIL_LEFT = 10 // rail distance from the conversation viewport left edge, px
-    var PREVIEW_MAX_CHARS = 180
     var HIGHLIGHT_MS = 2000
     var SYNC_MAX_PAGES = 120 // safety cap for the history-sync loop
     var SYNC_PAGE_DELAY_MS = 40 // settle time between history pages
@@ -53,6 +56,8 @@ window.__ModuleLoader__.load({
     var FISHEYE_SIGMA = 18 // gaussian sigma for the bell curve, px
     var SEAT_W = 72 // seat width, px — wide enough for the rightward fish-eye growth
     var MIN_RAIL_H = 80 // keep a usable rail even in very short windows
+    var FADE_EDGE = 22 // mask: fully transparent until this px from the rail edges
+    var FADE_SOLID = 54 // mask: fully opaque past this px from the rail edges
     var USER_KINDS = { user: true, steering: true }
     var SCROLL_SEL = '[data-conversation-scroll]'
     var ANCHOR_SEL = '[data-chat-anchor-key]'
@@ -62,10 +67,9 @@ window.__ModuleLoader__.load({
     // ------------------------------------------------------------------
     var STYLE_ID = 'dsh-conversation-minimap-style'
     var css = [
-      '.dsh-mm-seat{position:absolute;left:' + RAIL_LEFT + 'px;width:' + SEAT_W + 'px;pointer-events:none;z-index:6;overflow:hidden;-webkit-mask-image:linear-gradient(to bottom,transparent 0,transparent 22px,#000 54px,#000 calc(100% - 54px),transparent calc(100% - 22px),transparent 100%);mask-image:linear-gradient(to bottom,transparent 0,transparent 22px,#000 54px,#000 calc(100% - 54px),transparent calc(100% - 22px),transparent 100%)}',
+      '.dsh-mm-seat{position:absolute;left:' + RAIL_LEFT + 'px;width:' + SEAT_W + 'px;pointer-events:none;z-index:6;overflow:hidden;-webkit-mask-image:linear-gradient(to bottom,transparent 0,transparent ' + FADE_EDGE + 'px,#000 ' + FADE_SOLID + 'px,#000 calc(100% - ' + FADE_SOLID + 'px),transparent calc(100% - ' + FADE_EDGE + 'px),transparent 100%);mask-image:linear-gradient(to bottom,transparent 0,transparent ' + FADE_EDGE + 'px,#000 ' + FADE_SOLID + 'px,#000 calc(100% - ' + FADE_SOLID + 'px),transparent calc(100% - ' + FADE_EDGE + 'px),transparent 100%)}',
       '.dsh-mm-rail{position:absolute;left:0;width:16px;display:flex;flex-direction:column;pointer-events:auto;overflow:visible}',
       '.dsh-mm-inner{display:flex;flex-direction:column;align-items:flex-start;gap:' + ANCHOR_GAP + 'px;pointer-events:none;will-change:transform}',
-      '.dsh-mm-gap{flex:1 1 0;min-height:0}',
       '.dsh-mm-anchor{flex:0 0 ' + ANCHOR_H + 'px;box-sizing:border-box;width:' + BASE_W + 'px;height:' + ANCHOR_H + 'px;margin-left:2px;border-radius:2px;background:rgba(128,128,128,.5);cursor:pointer;pointer-events:auto;transition:width .18s ease-out,background-color .18s ease-out}',
       '.dsh-mm-anchor.dsh-mm-hot{background:rgba(35,35,35,.95)}',
       '.dsh-mm-anchor.dsh-mm-enlarged{background:rgba(90,90,90,.7)}',
@@ -90,6 +94,8 @@ window.__ModuleLoader__.load({
     // DOM helpers
     // ------------------------------------------------------------------
     function findScroll() {
+      // Only one conversation viewport is mounted at a time; revisit if DSH
+      // ever renders multiple sessions side by side.
       return document.querySelector(SCROLL_SEL)
     }
 
@@ -128,7 +134,6 @@ window.__ModuleLoader__.load({
       this.onRailMoveBound = null
       this.onRailLeaveBound = null
       this.jumpedDot = null
-      this.fishY = null
       this.resetTimer = null
       this.wasAtBottom = false
       this.ignoreScrollUntil = 0 // resize-anchoring scrolls must not clear the latch
@@ -245,7 +250,6 @@ window.__ModuleLoader__.load({
       if (!this.list) {
         // Conversation rows not rendered yet — retry shortly (MountManager also
         // re-attaches once rows appear).
-        var self = this
         setTimeout(function () { if (!self.disposed && !self.syncing) self.syncHistory() }, 600)
         return
       }
@@ -254,12 +258,16 @@ window.__ModuleLoader__.load({
       ;(async function () {
         try {
           for (var i = 0; i < SYNC_MAX_PAGES && !self.disposed; i++) {
-            var before = self.firstAnchorKey()
+            var beforeKey = self.firstAnchorKey()
+            var beforeH = self.scroll.scrollHeight
             await conv.loadOlder()
             await sleep(SYNC_PAGE_DELAY_MS)
             if (self.disposed) return
-            var after = self.firstAnchorKey()
-            if (after === before) break // history exhausted
+            var afterKey = self.firstAnchorKey()
+            var afterH = self.scroll.scrollHeight
+            // History exhausted only when nothing at all was prepended; a page
+            // without user rows still changes scrollHeight.
+            if (afterKey === beforeKey && afterH === beforeH) break
           }
         } catch (e) {
           console.warn('[dsh-conversation-minimap] history sync stopped', e)
@@ -309,7 +317,6 @@ window.__ModuleLoader__.load({
 
     MinimapController.prototype.render = function () {
       while (this.rail.firstChild) this.rail.removeChild(this.rail.firstChild)
-      this.rail.appendChild(this.syncHint)
       var shown = this.anchors.length >= MIN_PROMPTS
       this.seat.style.display = shown ? '' : 'none'
       if (!shown) return
@@ -364,7 +371,7 @@ window.__ModuleLoader__.load({
         // Window over the column: [w, w + railH], active centered when possible.
         // At the extremes the window extends INSET px past the column ends so the
         // outermost anchors stay clear of the rail-edge fade zones (fully visible).
-        var INSET = 60
+        var INSET = FADE_SOLID + 6 // keep the outermost anchors clear of the fade zone
         var activeCenter = this.activeIndex * (ANCHOR_H + ANCHOR_GAP) + ANCHOR_H / 2
         var overflow = columnH - railH
         var w = Math.max(-INSET, Math.min(overflow + INSET, activeCenter - railH / 2))
@@ -373,19 +380,11 @@ window.__ModuleLoader__.load({
       this.inner.style.transform = 'translateY(' + Math.round(shift) + 'px)'
     }
 
-    // Content metrics relative to the SCROLLER (the list element can sit inside
+    // Content origin relative to the SCROLLER (the list element can sit inside
     // sticky wrappers whose viewport offset is not the content origin).
-    MinimapController.prototype.contentMetrics = function () {
+    MinimapController.prototype.scrollerOrigin = function () {
       var sr = this.scroll.getBoundingClientRect()
-      var st = this.scroll.scrollTop
-      var composerEl = this.scroll.querySelector('[data-composer-seat]')
-      var composerH = composerEl ? composerEl.getBoundingClientRect().height : 0
-      if (!composerH) {
-        var v = getComputedStyle(this.scroll).getPropertyValue('--dsh-composer-height')
-        composerH = parseFloat(v) || 152
-      }
-      var contentH = Math.max(this.scroll.scrollHeight - composerH - 32, 1)
-      return { sr: sr, st: st, contentH: contentH }
+      return { srTop: sr.top, st: this.scroll.scrollTop }
     }
 
     // Align the rail with the visible conversation area: below the session
@@ -421,10 +420,10 @@ window.__ModuleLoader__.load({
 
     MinimapController.prototype.updatePositions = function () {
       if (!this.list) return
-      var m = this.contentMetrics()
+      var m = this.scrollerOrigin()
       for (var i = 0; i < this.anchors.length; i++) {
         var rect = this.anchors[i].row.getBoundingClientRect()
-        this.anchors[i].pos = rect.top - m.sr.top + m.st
+        this.anchors[i].pos = rect.top - m.srTop + m.st
         this.anchors[i].height = rect.height
       }
       this.updateActive()
@@ -443,7 +442,6 @@ window.__ModuleLoader__.load({
       requestAnimationFrame(function () {
         self.fisheyeRaf = false
         if (self.disposed) return
-        self.fishY = ev.clientY
         self.applyFishEye(ev.clientY)
       })
     }
@@ -458,7 +456,6 @@ window.__ModuleLoader__.load({
         if (self.disposed) return
         var r = anchorEl.getBoundingClientRect()
         var y = r.top + r.height / 2
-        self.fishY = y
         self.applyFishEye(y)
       })
     }
@@ -489,7 +486,6 @@ window.__ModuleLoader__.load({
     }
 
     MinimapController.prototype.resetFishEye = function () {
-      this.fishY = null
       for (var i = 0; i < this.anchors.length; i++) {
         var el = this.anchors[i].anchorEl
         if (el) {
@@ -638,7 +634,6 @@ window.__ModuleLoader__.load({
       this.ctx = ctx || null
       this.controller = null
       this.timer = null
-      this.lastSessionId = null
     }
 
     MountManager.prototype.start = function () {
