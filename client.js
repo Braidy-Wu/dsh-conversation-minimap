@@ -47,10 +47,10 @@ window.__ModuleLoader__.load({
     var STYLE_ID = 'dsh-conversation-minimap-style'
     var css = [
       '.dsh-mm-seat{position:absolute;top:0;bottom:0;left:' + RAIL_LEFT + 'px;width:16px;pointer-events:none;z-index:6}',
-      '.dsh-mm-rail{position:absolute;top:10px;bottom:10px;left:0;width:16px;display:flex;flex-direction:column;pointer-events:none}',
+      '.dsh-mm-rail{position:absolute;left:0;width:16px;display:flex;flex-direction:column;justify-content:space-evenly;pointer-events:none}',
       '.dsh-mm-gap{flex:1 1 0;min-height:0}',
-      '.dsh-mm-anchor{flex:0 0 auto;box-sizing:border-box;width:' + ANCHOR_SIZE + 'px;height:' + ANCHOR_SIZE + 'px;margin:0 auto;border-radius:3px;background:var(--dsw-alias-label-tertiary,rgba(120,120,120,.45));cursor:pointer;pointer-events:auto;transition:transform .12s var(--ds-ease-in-out,cubic-bezier(.4,0,.2,1)),background-color .12s var(--ds-ease-in-out,cubic-bezier(.4,0,.2,1)),width .12s var(--ds-ease-in-out,cubic-bezier(.4,0,.2,1)),border-radius .12s var(--ds-ease-in-out,cubic-bezier(.4,0,.2,1))}',
-      '.dsh-mm-anchor:hover{width:14px;border-radius:4px;background:var(--dsw-alias-label-secondary,rgba(60,60,60,.7))}',
+      '.dsh-mm-anchor{flex:0 0 auto;box-sizing:border-box;width:4px;height:12px;margin:0 auto;border-radius:2px;background:rgba(128,128,128,.45);cursor:pointer;pointer-events:auto;transition:width .15s var(--ds-ease-in-out,cubic-bezier(.4,0,.2,1)),background-color .15s var(--ds-ease-in-out,cubic-bezier(.4,0,.2,1)),border-radius .15s var(--ds-ease-in-out,cubic-bezier(.4,0,.2,1))}',
+      '.dsh-mm-anchor:hover{width:12px;border-radius:3px;background:rgba(60,60,60,.75)}',
       '.dsh-mm-anchor.dsh-mm-active{background:var(--dsw-static-deepseek-500,#4176e6)}',
       '.dsh-mm-anchor.dsh-mm-jumped{background:var(--dsw-static-green-500,#22c55e)}',
       '.dsh-mm-preview{position:fixed;z-index:1000;box-sizing:border-box;max-width:320px;padding:8px 10px;border-radius:8px;border:1px solid var(--dsw-alias-border-l2,rgba(128,128,128,.3));background:var(--dsw-alias-bg-layer-2,#ffffff);box-shadow:var(--dsw-shadow-lv2,0 6px 24px rgba(0,0,0,.16));color:var(--dsw-alias-label-primary,#1f1f1f);font:12px/1.5 var(--ds-font-family-code,"SF Mono",Consolas,monospace);display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;pointer-events:none;white-space:pre-wrap;word-break:break-word}',
@@ -139,6 +139,8 @@ window.__ModuleLoader__.load({
 
         this.onScrollBound = this.onScroll.bind(this)
         this.scroll.addEventListener('scroll', this.onScrollBound, { passive: true })
+        this.onResizeBound = this.onResize.bind(this)
+        window.addEventListener('resize', this.onResizeBound)
 
         this.rebuild()
         this.syncHistory()
@@ -151,6 +153,11 @@ window.__ModuleLoader__.load({
     MinimapController.prototype.findList = function () {
       var first = this.scroll.querySelector(ANCHOR_SEL)
       return first ? first.parentElement : null
+    }
+
+    MinimapController.prototype.onResize = function () {
+      if (this.disposed) return
+      this.measureOffsets()
     }
 
     MinimapController.prototype.scheduleRebuild = function () {
@@ -261,18 +268,9 @@ window.__ModuleLoader__.load({
       if (!shown) return
 
       var self = this
-      var gaps = this.computeGaps()
-
-      function addGap(g) {
-        var el = document.createElement('div')
-        el.className = 'dsh-mm-gap'
-        el.style.flexGrow = Math.max(g, 0).toFixed(2)
-        self.rail.appendChild(el)
-        return el
-      }
+      this.measureOffsets()
 
       for (var i = 0; i < this.anchors.length; i++) {
-        addGap(gaps[i])
         var a = this.anchors[i]
         var dot = document.createElement('div')
         dot.className = 'dsh-mm-anchor'
@@ -286,25 +284,27 @@ window.__ModuleLoader__.load({
         a.pos = 0
         a.height = 0
       }
-      addGap(gaps[this.anchors.length])
       this.rail.appendChild(this.syncHint)
       this.updatePositions()
     }
 
-    MinimapController.prototype.computeGaps = function () {
-      var listRect = this.list.getBoundingClientRect()
-      var scrollTop = this.scroll.scrollTop
-      var contentH = Math.max(this.list.scrollHeight || 0, listRect.height, 1)
-      var gaps = []
-      var prev = 0
-      for (var i = 0; i < this.anchors.length; i++) {
-        var rect = this.anchors[i].row.getBoundingClientRect()
-        var top = rect.top - listRect.top + scrollTop
-        gaps.push(top - prev)
-        prev = top + rect.height
-      }
-      gaps.push(Math.max(contentH - prev, 0))
-      return gaps
+    // Align the rail with the visible conversation area: below the session
+    // header and above the composer, so no anchor is hidden.
+    MinimapController.prototype.measureOffsets = function () {
+      try {
+        var root = this.parent
+        var rootRect = root.getBoundingClientRect()
+        var scrollRect = this.scroll.getBoundingClientRect()
+        var headerH = Math.max(scrollRect.top - rootRect.top, 0)
+        var composerEl = this.scroll.querySelector('[data-composer-seat]')
+        var composerH = composerEl ? composerEl.getBoundingClientRect().height : 0
+        if (!composerH) {
+          var v = getComputedStyle(this.scroll).getPropertyValue('--dsh-composer-height')
+          composerH = parseFloat(v) || 152
+        }
+        this.rail.style.top = (headerH + 8) + 'px'
+        this.rail.style.bottom = (composerH + 16) + 'px'
+      } catch (e) { /* keep previous offsets */ }
     }
 
     MinimapController.prototype.updatePositions = function () {
@@ -415,6 +415,7 @@ window.__ModuleLoader__.load({
       if (this.highlightTimer) clearTimeout(this.highlightTimer)
       if (this.observer) this.observer.disconnect()
       if (this.scroll && this.onScrollBound) this.scroll.removeEventListener('scroll', this.onScrollBound)
+      if (this.onResizeBound) window.removeEventListener('resize', this.onResizeBound)
       this.hidePreview()
       if (this.seat && this.seat.parentElement) this.seat.parentElement.removeChild(this.seat)
       if (this.parentWasStatic && this.parent) this.parent.style.position = ''

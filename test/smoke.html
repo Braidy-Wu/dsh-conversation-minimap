@@ -49,9 +49,10 @@
           getSnapshot: function () { return { current: 's1' } },
           subscribe: function () {}
         },
-        scope: function (id) {
+        scope: function (id) { return {} },
+        binding: function (id) {
           return {
-            conversation: {
+            session: {
               loadOlder: async function () {
                 window.__loadOlderCalls++
                 var col = document.querySelector('.col')
