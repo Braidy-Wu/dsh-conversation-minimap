@@ -43,6 +43,7 @@ window.__ModuleLoader__.load({
     var PEAK_W = 44 // fish-eye peak width, px (mouse-over bar)
     var FISHEYE_SIGMA = 18 // gaussian sigma for the bell curve, px
     var SEAT_W = 72 // seat width, px — wide enough for the rightward fish-eye growth
+    var MIN_RAIL_H = 80 // keep a usable rail even in very short windows
     var USER_KINDS = { user: true, steering: true }
     var SCROLL_SEL = '[data-conversation-scroll]'
     var ANCHOR_SEL = '[data-chat-anchor-key]'
@@ -321,23 +322,17 @@ window.__ModuleLoader__.load({
       this.updateShift()
     }
 
-    // Center the anchor column in the rail; when it overflows, follow the
-    // active anchor so the window tracks the conversation scroll (older
-    // anchors clip at the top and reappear when scrolling back up).
+    // Always center the anchor column in the rail. When the column overflows
+    // the rail (many prompts / short window), the excess is clipped and faded
+    // symmetrically at BOTH ends — the anchors converge toward the middle of
+    // the dialog and never exceed the rail range.
     MinimapController.prototype.updateShift = function () {
       if (!this.inner || !this.anchors.length) return
       var n = this.anchors.length
       var columnH = n * ANCHOR_H + (n - 1) * ANCHOR_GAP
       var railH = this.rail.getBoundingClientRect().height
       if (!railH) return
-      var shift
-      if (columnH <= railH) {
-        shift = (railH - columnH) / 2 // few anchors: centered, grows to both edges
-      } else {
-        var activeCenter = this.activeIndex * (ANCHOR_H + ANCHOR_GAP) + ANCHOR_H / 2
-        var overflow = columnH - railH
-        shift = Math.max(0, Math.min(overflow, activeCenter - railH / 2))
-      }
+      var shift = (railH - columnH) / 2
       this.inner.style.transform = 'translateY(' + Math.round(shift) + 'px)'
     }
 
@@ -370,10 +365,20 @@ window.__ModuleLoader__.load({
           var v = getComputedStyle(this.scroll).getPropertyValue('--dsh-composer-height')
           composerH = parseFloat(v) || 152
         }
-        this.rail.style.top = (headerH + 8) + 'px'
-        this.rail.style.bottom = (composerH + 16) + 'px'
-        this.seat.style.top = this.rail.style.top
-        this.seat.style.bottom = this.rail.style.bottom
+        var top = headerH + 8
+        var bottom = composerH + 16
+        var railH = rootRect.height - top - bottom
+        if (railH < MIN_RAIL_H) {
+          // Very short window: keep a usable rail instead of collapsing to 0.
+          railH = MIN_RAIL_H
+          bottom = Math.max(0, rootRect.height - top - railH)
+        }
+        // The seat is the positioned box at the rail bounds; the rail fills it
+        // (offsets relative to the seat, not the root — no double offset).
+        this.seat.style.top = top + 'px'
+        this.seat.style.bottom = bottom + 'px'
+        this.rail.style.top = '0px'
+        this.rail.style.bottom = '0px'
       } catch (e) { /* keep previous offsets */ }
     }
 
