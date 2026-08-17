@@ -172,15 +172,26 @@
                   ok('after live append: anchors=' + dotsC + ' (expect 7)')
                   if (dotsC !== 7) fail('rebuild on append failed')
 
-                  // 10. Container removed -> detach.
-                  document.getElementById('wrapper').remove()
+                  // 10. Transient window reset (send/streaming): remove 3 user rows
+                  //     to simulate the reset, then assert the resync settles the rail.
+                  ;['u1', 'u2', 'u3'].forEach(function (k) {
+                    var el = document.querySelector('[data-chat-anchor-key="' + k + '"]')
+                    if (el) el.remove()
+                  })
                   setTimeout(function () {
-                    ok('after removal seat exists=' + !!document.querySelector('.dsh-mm-seat') + ' (expect false)')
-                    if (document.querySelector('.dsh-mm-seat')) fail('controller not detached')
-                    if (typeof cleanupHolder.cleanup === 'function') cleanupHolder.cleanup()
-                    else fail('no cleanup captured')
-                    log('ALL DONE')
-                  }, 1200)
+                    var dotsD = document.querySelectorAll('.dsh-mm-anchor').length
+                    ok('after simulated window reset: anchors=' + dotsD + ' (expect 4)')
+                    if (dotsD !== 4) fail('drop-resync did not settle')
+                    // 11. Container removed -> detach.
+                    document.getElementById('wrapper').remove()
+                    setTimeout(function () {
+                      ok('after removal seat exists=' + !!document.querySelector('.dsh-mm-seat') + ' (expect false)')
+                      if (document.querySelector('.dsh-mm-seat')) fail('controller not detached')
+                      if (typeof cleanupHolder.cleanup === 'function') cleanupHolder.cleanup()
+                      else fail('no cleanup captured')
+                      log('ALL DONE')
+                    }, 1200)
+                  }, 900)
                 }, 400)
               }, 400)
             }, 700)

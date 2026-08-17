@@ -244,6 +244,7 @@ window.__ModuleLoader__.load({
     }
 
     MinimapController.prototype.syncHistory = function () {
+      if (this.syncing || this.disposed) return
       var self = this
       var conv = this.sessionConversation()
       if (!conv || typeof conv.loadOlder !== 'function') return
@@ -275,7 +276,8 @@ window.__ModuleLoader__.load({
           if (self.disposed) return
           self.syncing = false
           if (self.syncHint) self.syncHint.style.display = 'none'
-          self.rebuild()
+          self.anchors = self.collect()
+          self.render()
         }
       })()
     }
@@ -299,6 +301,15 @@ window.__ModuleLoader__.load({
       try {
         var next = this.collect()
         if (this.sameKeys(next)) return
+        // A shrinking anchor set means the conversation window was reset
+        // (transient re-render while sending/streaming, or a real re-window).
+        // Keep the current rail and re-pull the full history instead of
+        // flashing a short rail — if the shrink was transient the rail never
+        // flickers; if real, the sync restores every anchor.
+        if (next.length < this.anchors.length && this.anchors.length >= MIN_PROMPTS) {
+          this.syncHistory()
+          return
+        }
         this.anchors = next
         this.render()
       } catch (e) {
