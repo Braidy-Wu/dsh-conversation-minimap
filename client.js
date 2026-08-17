@@ -353,9 +353,12 @@ window.__ModuleLoader__.load({
         shift = (railH - columnH) / 2
       } else {
         // Window over the column: [w, w + railH], active centered when possible.
+        // At the extremes the window extends INSET px past the column ends so the
+        // outermost anchors stay clear of the rail-edge fade zones (fully visible).
+        var INSET = 60
         var activeCenter = this.activeIndex * (ANCHOR_H + ANCHOR_GAP) + ANCHOR_H / 2
         var overflow = columnH - railH
-        var w = Math.max(0, Math.min(overflow, activeCenter - railH / 2))
+        var w = Math.max(-INSET, Math.min(overflow + INSET, activeCenter - railH / 2))
         shift = -w // moving the column UP reveals later anchors
       }
       this.inner.style.transform = 'translateY(' + Math.round(shift) + 'px)'
