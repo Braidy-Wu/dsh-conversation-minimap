@@ -37,6 +37,8 @@ window.__ModuleLoader__.load({
     var HIGHLIGHT_MS = 2000
     var SYNC_MAX_PAGES = 120 // safety cap for the history-sync loop
     var SYNC_PAGE_DELAY_MS = 40 // settle time between history pages
+    var ANCHOR_H = 4 // anchor bar height, px (keep in sync with CSS)
+    var ANCHOR_GAP = 8 // fixed interval between anchors, px (keep in sync with CSS)
     var USER_KINDS = { user: true, steering: true }
     var SCROLL_SEL = '[data-conversation-scroll]'
     var ANCHOR_SEL = '[data-chat-anchor-key]'
@@ -46,11 +48,12 @@ window.__ModuleLoader__.load({
     // ------------------------------------------------------------------
     var STYLE_ID = 'dsh-conversation-minimap-style'
     var css = [
-      '.dsh-mm-seat{position:absolute;top:0;bottom:0;left:' + RAIL_LEFT + 'px;width:16px;pointer-events:none;z-index:6}',
-      '.dsh-mm-rail{position:absolute;left:0;width:16px;display:flex;flex-direction:column;pointer-events:none}',
+      '.dsh-mm-seat{position:absolute;top:0;bottom:0;left:' + RAIL_LEFT + 'px;width:16px;pointer-events:none;z-index:6;overflow:hidden}',
+      '.dsh-mm-rail{position:absolute;left:0;width:16px;display:flex;flex-direction:column;pointer-events:none;overflow:hidden}',
+      '.dsh-mm-inner{display:flex;flex-direction:column;align-items:center;gap:8px;pointer-events:none;will-change:transform}',
       '.dsh-mm-gap{flex:1 1 0;min-height:0}',
-      '.dsh-mm-anchor{flex:0 0 auto;box-sizing:border-box;width:14px;height:4px;margin:0 auto;border-radius:2px;background:rgba(128,128,128,.45);cursor:pointer;pointer-events:auto;transition:width .15s var(--ds-ease-in-out,cubic-bezier(.4,0,.2,1)),background-color .15s var(--ds-ease-in-out,cubic-bezier(.4,0,.2,1)),border-radius .15s var(--ds-ease-in-out,cubic-bezier(.4,0,.2,1))}',
-      '.dsh-mm-anchor:hover{width:24px;border-radius:3px;background:rgba(60,60,60,.75)}',
+      '.dsh-mm-anchor{flex:0 0 4px;box-sizing:border-box;width:14px;height:4px;border-radius:2px;background:rgba(128,128,128,.45);cursor:pointer;pointer-events:auto;transition:width .15s var(--ds-ease-in-out,cubic-bezier(.4,0,.2,1)),background-color .15s var(--ds-ease-in-out,cubic-bezier(.4,0,.2,1)),border-radius .15s var(--ds-ease-in-out,cubic-bezier(.4,0,.2,1))}',
+      '.dsh-mm-anchor:hover{width:20px;border-radius:3px;background:rgba(60,60,60,.75)}',
       '.dsh-mm-anchor.dsh-mm-active{background:var(--dsw-static-deepseek-500,#4176e6)}',
       '.dsh-mm-anchor.dsh-mm-jumped{background:var(--dsw-static-green-500,#22c55e)}',
       '.dsh-mm-preview{position:fixed;z-index:1000;box-sizing:border-box;max-width:380px;max-height:50vh;padding:8px 10px;border-radius:8px;border:1px solid var(--dsw-alias-border-l2,rgba(128,128,128,.3));background:var(--dsw-alias-bg-layer-2,#ffffff);box-shadow:var(--dsw-shadow-lv2,0 6px 24px rgba(0,0,0,.16));color:var(--dsw-alias-label-primary,#1f1f1f);font:12px/1.5 var(--ds-font-family-code,"SF Mono",Consolas,monospace);pointer-events:none;white-space:pre-wrap;word-break:break-word;overflow-y:auto}',
@@ -98,7 +101,9 @@ window.__ModuleLoader__.load({
       this.parent = scroll.parentElement
       this.seat = null
       this.rail = null
+      this.inner = null
       this.syncHint = null
+      this.activeIndex = 0
       this.anchors = []
       this.list = null
       this.observer = null
@@ -160,6 +165,7 @@ window.__ModuleLoader__.load({
     MinimapController.prototype.onResize = function () {
       if (this.disposed) return
       this.measureOffsets()
+      this.updateShift()
     }
 
     MinimapController.prototype.scheduleRebuild = function () {
@@ -272,18 +278,10 @@ window.__ModuleLoader__.load({
 
       var self = this
       this.measureOffsets()
-      var gaps = this.computeGaps()
-      var MIN_GAP = 8 // px floor so clustered anchors never overlap
 
-      function addGap(g) {
-        var el = document.createElement('div')
-        el.className = 'dsh-mm-gap'
-        el.style.flexGrow = Math.max(g, MIN_GAP).toFixed(2)
-        self.rail.appendChild(el)
-      }
-
+      this.inner = document.createElement('div')
+      this.inner.className = 'dsh-mm-inner'
       for (var i = 0; i < this.anchors.length; i++) {
-        addGap(gaps[i])
         var a = this.anchors[i]
         var dot = document.createElement('div')
         dot.className = 'dsh-mm-anchor'
@@ -291,14 +289,35 @@ window.__ModuleLoader__.load({
         dot.addEventListener('pointerenter', function (ev) { self.onHover(ev.currentTarget) })
         dot.addEventListener('pointerleave', function () { self.hidePreview() })
         dot.addEventListener('click', function (ev) { self.onJump(ev.currentTarget) })
-        this.rail.appendChild(dot)
+        this.inner.appendChild(dot)
         a.anchorEl = dot
         a.pos = 0
         a.height = 0
       }
-      addGap(gaps[this.anchors.length])
+      this.rail.appendChild(this.inner)
       this.rail.appendChild(this.syncHint)
       this.updatePositions()
+      this.updateShift()
+    }
+
+    // Center the anchor column in the rail; when it overflows, follow the
+    // active anchor so the window tracks the conversation scroll (older
+    // anchors clip at the top and reappear when scrolling back up).
+    MinimapController.prototype.updateShift = function () {
+      if (!this.inner || !this.anchors.length) return
+      var n = this.anchors.length
+      var columnH = n * ANCHOR_H + (n - 1) * ANCHOR_GAP
+      var railH = this.rail.getBoundingClientRect().height
+      if (!railH) return
+      var shift
+      if (columnH <= railH) {
+        shift = (railH - columnH) / 2 // few anchors: centered, grows to both edges
+      } else {
+        var activeCenter = this.activeIndex * (ANCHOR_H + ANCHOR_GAP) + ANCHOR_H / 2
+        var overflow = columnH - railH
+        shift = Math.max(0, Math.min(overflow, activeCenter - railH / 2))
+      }
+      this.inner.style.transform = 'translateY(' + Math.round(shift) + 'px)'
     }
 
     // Content metrics relative to the SCROLLER (the list element can sit inside
@@ -314,21 +333,6 @@ window.__ModuleLoader__.load({
       }
       var contentH = Math.max(this.scroll.scrollHeight - composerH - 32, 1)
       return { sr: sr, st: st, contentH: contentH }
-    }
-
-    MinimapController.prototype.computeGaps = function () {
-      if (!this.list) return []
-      var m = this.contentMetrics()
-      var gaps = []
-      var prev = 0
-      for (var i = 0; i < this.anchors.length; i++) {
-        var rect = this.anchors[i].row.getBoundingClientRect()
-        var top = rect.top - m.sr.top + m.st
-        gaps.push(top - prev)
-        prev = top + rect.height
-      }
-      gaps.push(Math.max(m.contentH - prev, 0))
-      return gaps
     }
 
     // Align the rail with the visible conversation area: below the session
@@ -379,10 +383,12 @@ window.__ModuleLoader__.load({
       for (var i = 0; i < this.anchors.length; i++) {
         if (this.anchors[i].pos <= threshold) active = i
       }
+      this.activeIndex = active
       for (var j = 0; j < this.anchors.length; j++) {
         var el = this.anchors[j].anchorEl
         if (el) el.classList.toggle('dsh-mm-active', j === active)
       }
+      this.updateShift()
     }
 
     MinimapController.prototype.onHover = function (dot) {
