@@ -31,11 +31,15 @@ progress: 95
 
 ## 下一步
 
-- [ ] 用户硬刷新（Ctrl+Shift+R）后确认 v0.5 观感与交互
+- [ ] 用户硬刷新（Ctrl+Shift+R）后确认 v0.6 观感与交互
 - [ ] （可选）配置项接入（enabled/minPrompts 目前为客户端常量，未接线）
 
 ## 最近完成
 
+- [x] **v0.6（用户反馈）**：胶囊尺寸锁死统一（14×4，flex:0 0 4px，实测 19 个全部
+  一致）；锚点等距（固定 8px gap，实测 min=max=8）；锚点列整体居中（从中间开始，
+  向两边增长）；溢出时窗口跟随 active 锚点滚动（rail overflow:hidden 裁剪，
+  顶部逐渐消失、往回滚重新出现，窗口化数学已实测）；resize 重新对齐
 - [x] **v0.5（用户反馈）**：横向 GPT 风格胶囊（14×4px 悬停变宽）；位置改为按消息实际位置
   比例映射——关键修复：计算基准从 list 改为 SCROLLER（list 位于 sticky 包装层内，
   viewport 偏移污染了首/尾间隙的绝对项），实测 railFrac↔contentFrac 偏差 <0.5%；
