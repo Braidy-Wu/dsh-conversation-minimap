@@ -5,7 +5,7 @@
 # Config (all optional):
 #   minPrompts   - show the rail only when the conversation has at least this
 #                  many user prompts (default 4; 0 = always show)
-#   anchorSize   - anchor dot diameter in px (default 6)
+#   anchorSize   - anchor bar height in px (default 3, range 2-8)
 #   enabled      - master switch (default true)
 - insert:
     - id: conversation-minimap
@@ -13,4 +13,4 @@
       config:
         enabled: true
         minPrompts: 4
-        anchorSize: 6
+        anchorSize: 3
