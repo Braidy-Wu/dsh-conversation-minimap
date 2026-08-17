@@ -42,6 +42,7 @@ window.__ModuleLoader__.load({
     var BASE_W = 12 // anchor base width, px
     var PEAK_W = 56 // fish-eye peak width, px (mouse-over bar)
     var FISHEYE_SIGMA = 18 // gaussian sigma for the bell curve, px
+    var SEAT_W = 72 // seat width, px — wide enough for the rightward fish-eye growth
     var USER_KINDS = { user: true, steering: true }
     var SCROLL_SEL = '[data-conversation-scroll]'
     var ANCHOR_SEL = '[data-chat-anchor-key]'
@@ -51,11 +52,11 @@ window.__ModuleLoader__.load({
     // ------------------------------------------------------------------
     var STYLE_ID = 'dsh-conversation-minimap-style'
     var css = [
-      '.dsh-mm-seat{position:absolute;top:0;bottom:0;left:' + RAIL_LEFT + 'px;width:16px;pointer-events:none;z-index:6;overflow:hidden}',
-      '.dsh-mm-rail{position:absolute;left:0;width:16px;display:flex;flex-direction:column;pointer-events:auto;overflow:hidden;-webkit-mask-image:linear-gradient(to bottom,transparent 0,transparent 22px,#000 54px,#000 calc(100% - 54px),transparent calc(100% - 22px),transparent 100%);mask-image:linear-gradient(to bottom,transparent 0,transparent 22px,#000 54px,#000 calc(100% - 54px),transparent calc(100% - 22px),transparent 100%)}',
-      '.dsh-mm-inner{display:flex;flex-direction:column;align-items:center;gap:' + ANCHOR_GAP + 'px;pointer-events:none;will-change:transform}',
+      '.dsh-mm-seat{position:absolute;left:' + RAIL_LEFT + 'px;width:' + SEAT_W + 'px;pointer-events:none;z-index:6;overflow:hidden;-webkit-mask-image:linear-gradient(to bottom,transparent 0,transparent 22px,#000 54px,#000 calc(100% - 54px),transparent calc(100% - 22px),transparent 100%);mask-image:linear-gradient(to bottom,transparent 0,transparent 22px,#000 54px,#000 calc(100% - 54px),transparent calc(100% - 22px),transparent 100%)}',
+      '.dsh-mm-rail{position:absolute;left:0;width:16px;display:flex;flex-direction:column;pointer-events:auto;overflow:visible}',
+      '.dsh-mm-inner{display:flex;flex-direction:column;align-items:flex-start;gap:' + ANCHOR_GAP + 'px;pointer-events:none;will-change:transform}',
       '.dsh-mm-gap{flex:1 1 0;min-height:0}',
-      '.dsh-mm-anchor{flex:0 0 ' + ANCHOR_H + 'px;box-sizing:border-box;width:' + BASE_W + 'px;height:' + ANCHOR_H + 'px;border-radius:2px;background:rgba(128,128,128,.5);cursor:pointer;pointer-events:auto;transition:width .18s ease-out,background-color .18s ease-out}',
+      '.dsh-mm-anchor{flex:0 0 ' + ANCHOR_H + 'px;box-sizing:border-box;width:' + BASE_W + 'px;height:' + ANCHOR_H + 'px;margin-left:2px;border-radius:2px;background:rgba(128,128,128,.5);cursor:pointer;pointer-events:auto;transition:width .18s ease-out,background-color .18s ease-out}',
       '.dsh-mm-anchor.dsh-mm-hot{background:rgba(35,35,35,.95)}',
       '.dsh-mm-anchor.dsh-mm-enlarged{background:rgba(90,90,90,.7)}',
       '.dsh-mm-anchor.dsh-mm-active{background:var(--dsw-static-deepseek-500,#4176e6);box-shadow:0 0 5px rgba(65,118,230,.85)}',
@@ -369,6 +370,8 @@ window.__ModuleLoader__.load({
         }
         this.rail.style.top = (headerH + 8) + 'px'
         this.rail.style.bottom = (composerH + 16) + 'px'
+        this.seat.style.top = this.rail.style.top
+        this.seat.style.bottom = this.rail.style.bottom
       } catch (e) { /* keep previous offsets */ }
     }
 
@@ -432,10 +435,12 @@ window.__ModuleLoader__.load({
 
     MinimapController.prototype.updateActive = function () {
       if (!this.anchors.length) return
-      var threshold = this.scroll.scrollTop + 8
+      // Switch the active anchor when the prompt's vertical center crosses the
+      // viewport's vertical center (not as soon as it peeks at the top).
+      var center = this.scroll.scrollTop + this.scroll.clientHeight / 2
       var active = 0
       for (var i = 0; i < this.anchors.length; i++) {
-        if (this.anchors[i].pos <= threshold) active = i
+        if (this.anchors[i].pos + this.anchors[i].height / 2 <= center) active = i
       }
       this.activeIndex = active
       for (var j = 0; j < this.anchors.length; j++) {
