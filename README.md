@@ -1,5 +1,7 @@
 # dsh-conversation-minimap
 
+中文 | [English](README.en.md)
+
 DeepSeek Harness (DSH) Web GUI 插件：**Prompt 导航迷你地图（Prompt-based Conversation Minimap）**。
 
 长对话左侧显示一条纵向导航缩略条——复刻 ChatGPT 桌面端的对话迷你地图：
