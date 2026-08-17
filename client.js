@@ -37,8 +37,11 @@ window.__ModuleLoader__.load({
     var HIGHLIGHT_MS = 2000
     var SYNC_MAX_PAGES = 120 // safety cap for the history-sync loop
     var SYNC_PAGE_DELAY_MS = 40 // settle time between history pages
-    var ANCHOR_H = 4 // anchor bar height, px (keep in sync with CSS)
-    var ANCHOR_GAP = 8 // fixed interval between anchors, px (keep in sync with CSS)
+    var ANCHOR_H = 3 // anchor bar height, px (keep in sync with CSS)
+    var ANCHOR_GAP = 12 // fixed interval between anchors, px (keep in sync with CSS)
+    var BASE_W = 12 // anchor base width, px
+    var PEAK_W = 40 // fish-eye peak width, px (mouse-over bar)
+    var FISHEYE_SIGMA = 15 // gaussian sigma for the bell curve, px
     var USER_KINDS = { user: true, steering: true }
     var SCROLL_SEL = '[data-conversation-scroll]'
     var ANCHOR_SEL = '[data-chat-anchor-key]'
@@ -49,11 +52,11 @@ window.__ModuleLoader__.load({
     var STYLE_ID = 'dsh-conversation-minimap-style'
     var css = [
       '.dsh-mm-seat{position:absolute;top:0;bottom:0;left:' + RAIL_LEFT + 'px;width:16px;pointer-events:none;z-index:6;overflow:hidden}',
-      '.dsh-mm-rail{position:absolute;left:0;width:16px;display:flex;flex-direction:column;pointer-events:none;overflow:hidden}',
-      '.dsh-mm-inner{display:flex;flex-direction:column;align-items:center;gap:8px;pointer-events:none;will-change:transform}',
+      '.dsh-mm-rail{position:absolute;left:0;width:16px;display:flex;flex-direction:column;pointer-events:auto;overflow:hidden;-webkit-mask-image:linear-gradient(to bottom,transparent 0,transparent 22px,#000 54px,#000 calc(100% - 54px),transparent calc(100% - 22px),transparent 100%);mask-image:linear-gradient(to bottom,transparent 0,transparent 22px,#000 54px,#000 calc(100% - 54px),transparent calc(100% - 22px),transparent 100%)}',
+      '.dsh-mm-inner{display:flex;flex-direction:column;align-items:center;gap:' + ANCHOR_GAP + 'px;pointer-events:none;will-change:transform}',
       '.dsh-mm-gap{flex:1 1 0;min-height:0}',
-      '.dsh-mm-anchor{flex:0 0 4px;box-sizing:border-box;width:14px;height:4px;border-radius:2px;background:rgba(128,128,128,.45);cursor:pointer;pointer-events:auto;transition:width .15s var(--ds-ease-in-out,cubic-bezier(.4,0,.2,1)),background-color .15s var(--ds-ease-in-out,cubic-bezier(.4,0,.2,1)),border-radius .15s var(--ds-ease-in-out,cubic-bezier(.4,0,.2,1))}',
-      '.dsh-mm-anchor:hover{width:20px;border-radius:3px;background:rgba(60,60,60,.75)}',
+      '.dsh-mm-anchor{flex:0 0 ' + ANCHOR_H + 'px;box-sizing:border-box;width:' + BASE_W + 'px;height:' + ANCHOR_H + 'px;border-radius:2px;background:rgba(128,128,128,.5);cursor:pointer;pointer-events:auto;transition:width .12s ease-out,background-color .12s ease-out}',
+      '.dsh-mm-anchor.dsh-mm-hot{background:rgba(45,45,45,.92)}',
       '.dsh-mm-anchor.dsh-mm-active{background:var(--dsw-static-deepseek-500,#4176e6)}',
       '.dsh-mm-anchor.dsh-mm-jumped{background:var(--dsw-static-green-500,#22c55e)}',
       '.dsh-mm-preview{position:fixed;z-index:1000;box-sizing:border-box;max-width:380px;max-height:50vh;padding:8px 10px;border-radius:8px;border:1px solid var(--dsw-alias-border-l2,rgba(128,128,128,.3));background:var(--dsw-alias-bg-layer-2,#ffffff);box-shadow:var(--dsw-shadow-lv2,0 6px 24px rgba(0,0,0,.16));color:var(--dsw-alias-label-primary,#1f1f1f);font:12px/1.5 var(--ds-font-family-code,"SF Mono",Consolas,monospace);pointer-events:none;white-space:pre-wrap;word-break:break-word;overflow-y:auto}',
@@ -109,6 +112,9 @@ window.__ModuleLoader__.load({
       this.observer = null
       this.previewEl = null
       this.highlightTimer = null
+      this.fisheyeRaf = false
+      this.onRailMoveBound = null
+      this.onRailLeaveBound = null
       this.rafPending = false
       this.syncing = false
       this.disposed = false
@@ -142,6 +148,10 @@ window.__ModuleLoader__.load({
 
         this.onScrollBound = this.onScroll.bind(this)
         this.scroll.addEventListener('scroll', this.onScrollBound, { passive: true })
+        this.onRailMoveBound = this.onRailMove.bind(this)
+        this.onRailLeaveBound = this.onRailLeave.bind(this)
+        this.rail.addEventListener('pointermove', this.onRailMoveBound)
+        this.rail.addEventListener('pointerleave', this.onRailLeaveBound)
         this.onResizeBound = this.onResize.bind(this)
         window.addEventListener('resize', this.onResizeBound)
 
@@ -286,8 +296,14 @@ window.__ModuleLoader__.load({
         var dot = document.createElement('div')
         dot.className = 'dsh-mm-anchor'
         dot.setAttribute('data-mm-key', a.key)
-        dot.addEventListener('pointerenter', function (ev) { self.onHover(ev.currentTarget) })
-        dot.addEventListener('pointerleave', function () { self.hidePreview() })
+        ;(function (anchorEl) {
+          anchorEl.addEventListener('pointerenter', function (ev) { self.onHover(anchorEl) })
+          anchorEl.addEventListener('pointerleave', function () {
+            self.hidePreview()
+            anchorEl.style.width = ''
+            anchorEl.classList.remove('dsh-mm-hot')
+          })
+        })(dot)
         dot.addEventListener('click', function (ev) { self.onJump(ev.currentTarget) })
         this.inner.appendChild(dot)
         a.anchorEl = dot
@@ -363,6 +379,41 @@ window.__ModuleLoader__.load({
         this.anchors[i].height = rect.height
       }
       this.updateActive()
+    }
+
+    // GPT-style fish-eye: bar widths follow a bell curve around the cursor.
+    MinimapController.prototype.onRailMove = function (ev) {
+      var self = this
+      if (this.fisheyeRaf) return
+      this.fisheyeRaf = true
+      requestAnimationFrame(function () {
+        self.fisheyeRaf = false
+        if (self.disposed) return
+        try {
+          var railRect = self.rail.getBoundingClientRect()
+          var mouseY = ev.clientY
+          for (var i = 0; i < self.anchors.length; i++) {
+            var el = self.anchors[i].anchorEl
+            if (!el) continue
+            var r = el.getBoundingClientRect()
+            var d = Math.abs(r.top + r.height / 2 - mouseY)
+            var w = BASE_W + (PEAK_W - BASE_W) * Math.exp(-(d * d) / (2 * FISHEYE_SIGMA * FISHEYE_SIGMA))
+            el.style.width = Math.round(w) + 'px'
+            el.classList.toggle('dsh-mm-hot', d < 5)
+          }
+        } catch (e) { /* ignore */ }
+      })
+    }
+
+    MinimapController.prototype.onRailLeave = function () {
+      for (var i = 0; i < this.anchors.length; i++) {
+        var el = this.anchors[i].anchorEl
+        if (el) {
+          el.style.width = ''
+          el.classList.remove('dsh-mm-hot')
+        }
+      }
+      this.hidePreview()
     }
 
     MinimapController.prototype.onScroll = function () {
@@ -463,6 +514,8 @@ window.__ModuleLoader__.load({
       if (this.highlightTimer) clearTimeout(this.highlightTimer)
       if (this.observer) this.observer.disconnect()
       if (this.scroll && this.onScrollBound) this.scroll.removeEventListener('scroll', this.onScrollBound)
+      if (this.rail && this.onRailMoveBound) this.rail.removeEventListener('pointermove', this.onRailMoveBound)
+      if (this.rail && this.onRailLeaveBound) this.rail.removeEventListener('pointerleave', this.onRailLeaveBound)
       if (this.onResizeBound) window.removeEventListener('resize', this.onResizeBound)
       this.hidePreview()
       if (this.seat && this.seat.parentElement) this.seat.parentElement.removeChild(this.seat)
