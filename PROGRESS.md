@@ -6,7 +6,7 @@ lastTool: dsh
 lastSession: 2026-08-17T00:00:00
 environment: office
 branch: main
-progress: 30
+progress: 80
 ---
 
 # dsh-conversation-minimap
@@ -31,12 +31,14 @@ progress: 30
 
 ## 下一步
 
-- [ ] 写 client.js 核心实现（rail 渲染 / 悬停预览 / 点击跳转 / 位置指示器）
-- [ ] Playwright 模拟 DOM 烟雾测试（不用重启 GUI）
-- [ ] `dsh plugin --profile web add link:/root/projects/dsh-conversation-minimap` 安装
-- [ ] 用户重启 dsh web 后实测反馈
+- [ ] 用户重启 dsh web 后实测反馈（rail 显示 / 悬停预览 / 点击跳转）
+- [ ] 反馈后微调：位置、大小、颜色、minPrompts 阈值
+- [ ] （可选）配置项接入（enabled/minPrompts/anchorSize 目前为客户端常量，未接线）
 
 ## 最近完成
 
+- [x] client.js 核心实现（rail 渲染 / 悬停预览 / 点击跳转 / 位置指示器 / 动态追加重建）
+- [x] Playwright 模拟 DOM 烟雾测试 8/8 通过、0 控制台错误（含修复 onScroll this 绑定 bug）
+- [x] 已安装进 web profile（`dsh plugin add link:...`，bundle 已挂载）
 - [x] 项目骨架：git init、package.json、cordis.patch.yml、index.js、.gitignore
 - [x] 注册 ROUTING（driver=dsh）
