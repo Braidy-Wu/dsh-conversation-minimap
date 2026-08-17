@@ -28,16 +28,25 @@ window.__ModuleLoader__.load({
     var exports = module.exports
 
     // ------------------------------------------------------------------
-    // Config
+    // Config (layer config injected by the host half via
+    // window.__DSH_MINIMAP_CONFIG__; values are clamped to sane ranges)
     // ------------------------------------------------------------------
-    var MIN_PROMPTS = 4 // show the rail only with at least this many prompts
-    var ANCHOR_SIZE = 6 // anchor dot diameter, px
+    var __cfg = {}
+    try {
+      if (typeof window !== 'undefined' && window.__DSH_MINIMAP_CONFIG__) __cfg = window.__DSH_MINIMAP_CONFIG__
+    } catch (e) { /* defaults */ }
+    function cfgNum(v, lo, hi, def) {
+      var n = Number(v)
+      return isFinite(n) ? Math.max(lo, Math.min(hi, n)) : def
+    }
+    var MIN_PROMPTS = cfgNum(__cfg.minPrompts, 0, 100, 4) // show the rail only with at least this many prompts
+    var ENABLED = __cfg.enabled === undefined ? true : !!__cfg.enabled // master switch
+    var ANCHOR_H = cfgNum(__cfg.anchorSize, 2, 8, 3) // anchor bar height, px (configurable)
     var RAIL_LEFT = 10 // rail distance from the conversation viewport left edge, px
     var PREVIEW_MAX_CHARS = 180
     var HIGHLIGHT_MS = 2000
     var SYNC_MAX_PAGES = 120 // safety cap for the history-sync loop
     var SYNC_PAGE_DELAY_MS = 40 // settle time between history pages
-    var ANCHOR_H = 3 // anchor bar height, px (keep in sync with CSS)
     var ANCHOR_GAP = 12 // fixed interval between anchors, px (keep in sync with CSS)
     var BASE_W = 12 // anchor base width, px
     var PEAK_W = 44 // fish-eye peak width, px (mouse-over bar)
@@ -701,6 +710,7 @@ window.__ModuleLoader__.load({
     // Plugin entry
     // ------------------------------------------------------------------
     function apply(ctx) {
+      if (!ENABLED) return // master switch off — do not mount
       ctx.effect(function () {
         var manager = new MountManager(ctx)
         manager.start()

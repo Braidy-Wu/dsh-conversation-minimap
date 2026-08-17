@@ -21,16 +21,16 @@ dsh plugin --profile web add github:Braidy-Wu/dsh-conversation-minimap
 
 Restart `dsh web`.
 
-## Configuration (cordis.patch.yml, all optional)
+## Configuration (cordis.patch.yml, all optional — restart `dsh web` after changes)
 
 ```yaml
 - insert:
     - id: conversation-minimap
       name: dsh-conversation-minimap
       config:
-        enabled: true    # master switch
-        minPrompts: 4    # show the rail once the session has at least this many user prompts (0 = always)
-        anchorSize: 6    # anchor dot diameter, px
+        enabled: true    # master switch (false = never loads)
+        minPrompts: 4    # show the rail once the session has at least this many user prompts (default 4, range 0-100)
+        anchorSize: 3    # anchor bar height in px (default 3, range 2-8)
 ```
 
 ## How it works

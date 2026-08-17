@@ -1,11 +1,25 @@
-// dsh-conversation-minimap v0.1 — host half.
-// The whole feature lives in the browser (client.js): the client observes the
-// conversation DOM, renders the minimap rail, and handles hover/click.
-// The host half exists only so the bundle layer mounts and the client
-// manifest is discovered by dsh-client-modules. No host services needed.
+// dsh-conversation-minimap v1.1.0 — host half.
+// The feature itself lives in the browser (client.js). The host half:
+//   1. mounts the bundle layer (see cordis.patch.yml),
+//   2. injects the layer config into every index.html response as
+//      window.__DSH_MINIMAP_CONFIG__, which client.js reads at load.
+// Seam: the official webServer.tapIndex (same as dsh-theme-plugin).
 
 export const name = 'conversation-minimap'
 
-export function apply() {
-  // no-op: all logic is client-side
+function injectConfig(html, config) {
+  const payload = JSON.stringify(config ?? {}).replaceAll('<', '\\u003c')
+  const script = `<script>window.__DSH_MINIMAP_CONFIG__ = ${payload}</script>`
+  const head = html.indexOf('<head>')
+  if (head !== -1) return html.slice(0, head + 6) + script + html.slice(head + 6)
+  return script + html
+}
+
+export function apply(ctx, config) {
+  ctx.inject(['webServer'], (httpCtx) => {
+    httpCtx.effect(
+      () => httpCtx.webServer.tapIndex((html) => injectConfig(html, config)),
+      'dsh-conversation-minimap: inject config into index responses'
+    )
+  })
 }

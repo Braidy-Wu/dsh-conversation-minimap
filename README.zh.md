@@ -24,16 +24,16 @@ dsh plugin --profile web add github:Braidy-Wu/dsh-conversation-minimap
 
 重启 `dsh web` 生效。
 
-## 配置（cordis.patch.yml，全部可选）
+## 配置（cordis.patch.yml，全部可选，修改后重启 `dsh web` 生效）
 
 ```yaml
 - insert:
     - id: conversation-minimap
       name: dsh-conversation-minimap
       config:
-        enabled: true    # 总开关
-        minPrompts: 4    # 会话内用户 Prompt 数 ≥ 此值才显示 rail（0 = 总是显示）
-        anchorSize: 6    # 锚点直径 px
+        enabled: true    # 总开关（false = 完全不加载）
+        minPrompts: 4    # 会话内用户 Prompt 数 ≥ 此值才显示 rail（0 = 总是显示，默认 4，范围 0-100）
+        anchorSize: 3    # 锚点横条高度 px（默认 3，范围 2-8）
 ```
 
 ## 工作原理

@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>dsh-conversation-minimap config test</title>
+<style>
+  body { margin: 0; font-family: sans-serif; }
+  #wrapper { position: relative; height: 600px; border: 1px solid #ccc; }
+  #scroll { height: 600px; overflow-y: auto; background: #fafafa; }
+  .col { padding: 8px; }
+  .row { padding: 12px; margin: 8px 0; border-radius: 8px; background: #fff; border: 1px solid #eee; }
+  #results { position: fixed; top: 0; right: 0; width: 420px; background: #111; color: #7f7;
+             font: 12px/1.6 monospace; padding: 12px; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+<div id="wrapper">
+  <div id="scroll" data-conversation-scroll>
+    <div class="col">
+      <div class="row user" data-chat-anchor-key="u1" data-chat-flow-kind="user">Prompt 1</div>
+      <div class="row assistant" data-chat-anchor-key="a1" data-chat-flow-kind="assistant-step">回答一</div>
+      <div class="row user" data-chat-anchor-key="u2" data-chat-flow-kind="user">Prompt 2</div>
+      <div class="row assistant" data-chat-anchor-key="a2" data-chat-flow-kind="assistant-step">回答二</div>
+      <div class="row user" data-chat-anchor-key="u3" data-chat-flow-kind="user">Prompt 3</div>
+      <div class="row assistant" data-chat-anchor-key="a3" data-chat-flow-kind="assistant-step">回答三</div>
+      <div class="row user" data-chat-anchor-key="u4" data-chat-flow-kind="user">Prompt 4</div>
+      <div class="row assistant" data-chat-anchor-key="a4" data-chat-flow-kind="assistant-step">回答四</div>
+      <div class="row user" data-chat-anchor-key="u5" data-chat-flow-kind="user">Prompt 5</div>
+      <div class="row assistant" data-chat-anchor-key="a5" data-chat-flow-kind="assistant-step">回答五</div>
+      <div class="row user" data-chat-anchor-key="u6" data-chat-flow-kind="user">Prompt 6</div>
+      <div class="row assistant" data-chat-anchor-key="a6" data-chat-flow-kind="assistant-step">回答六</div>
+    </div>
+  </div>
+</div>
+<pre id="results">running…</pre>
+<script>
+  // case: enabled=false | minprompts | anchorsize
+  var params = new URLSearchParams(location.search)
+  var theCase = params.get('case') || 'minprompts'
+  if (theCase === 'enabled-false') window.__DSH_MINIMAP_CONFIG__ = { enabled: false }
+  else if (theCase === 'minprompts') window.__DSH_MINIMAP_CONFIG__ = { enabled: true, minPrompts: 100 }
+  else window.__DSH_MINIMAP_CONFIG__ = { enabled: true, minPrompts: 4, anchorSize: 6 }
+
+  window.__ModuleLoader__ = { load: function (spec) { window.__minimapSpec = spec } }
+
+  function ctxStub() {
+    return {
+      sessions: {
+        list: { getSnapshot: function () { return { current: 's1' } }, subscribe: function () {} },
+        binding: function () { return { session: { loadOlder: async function () {} } } }
+      }
+    }
+  }
+</script>
+<script src="../client.js"></script>
+<script>
+  (function () {
+    var results = []
+    function log(s) { results.push(s); document.getElementById('results').textContent = results.join('\n') }
+    function fail(s) { log('FAIL: ' + s) }
+    function ok(s) { log('ok: ' + s) }
+    try {
+      var mod = window.__minimapSpec.factory(function () {})
+      var ctx = ctxStub()
+      ctx.effect = function (fn) { var c = fn(); return c }
+      mod.apply(ctx)
+      setTimeout(function () {
+        var seat = document.querySelector('.dsh-mm-seat')
+        var dots = document.querySelectorAll('.dsh-mm-anchor')
+        if (theCase === 'enabled-false') {
+          ok('enabled=false: seat mounted = ' + !!seat + ' (expect false)')
+          if (seat) fail('master switch ignored')
+        } else if (theCase === 'minprompts') {
+          var display = seat ? getComputedStyle(seat).display : 'no-seat'
+          ok('minPrompts=100: anchors = ' + dots.length + ' (expect 0), seat display = ' + display + ' (expect none)')
+          if (dots.length !== 0) fail('minPrompts ignored')
+          if (display !== 'none') fail('seat should be hidden')
+        } else {
+          var h = dots.length ? Math.round(dots[0].getBoundingClientRect().height) : 0
+          ok('anchorSize=6: anchors = ' + dots.length + ' (expect 6), bar height = ' + h + 'px (expect 6)')
+          if (h !== 6) fail('anchorSize ignored')
+          if (dots.length !== 6) fail('anchor count wrong')
+        }
+        log('CASE DONE')
+      }, 600)
+    } catch (e) {
+      fail('exception: ' + e.message)
+    }
+  })()
+</script>
+</body>
+</html>
