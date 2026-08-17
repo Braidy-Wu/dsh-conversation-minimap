@@ -40,7 +40,7 @@ window.__ModuleLoader__.load({
     var ANCHOR_H = 3 // anchor bar height, px (keep in sync with CSS)
     var ANCHOR_GAP = 12 // fixed interval between anchors, px (keep in sync with CSS)
     var BASE_W = 12 // anchor base width, px
-    var PEAK_W = 56 // fish-eye peak width, px (mouse-over bar)
+    var PEAK_W = 44 // fish-eye peak width, px (mouse-over bar)
     var FISHEYE_SIGMA = 18 // gaussian sigma for the bell curve, px
     var SEAT_W = 72 // seat width, px — wide enough for the rightward fish-eye growth
     var USER_KINDS = { user: true, steering: true }
@@ -118,6 +118,8 @@ window.__ModuleLoader__.load({
       this.onRailMoveBound = null
       this.onRailLeaveBound = null
       this.jumpedDot = null
+      this.fishY = null
+      this.resetTimer = null
       this.rafPending = false
       this.syncing = false
       this.disposed = false
@@ -300,11 +302,11 @@ window.__ModuleLoader__.load({
         dot.className = 'dsh-mm-anchor'
         dot.setAttribute('data-mm-key', a.key)
         ;(function (anchorEl) {
-          anchorEl.addEventListener('pointerenter', function (ev) { self.onHover(anchorEl) })
+          anchorEl.addEventListener('pointerenter', function () { self.onHover(anchorEl) })
+          anchorEl.addEventListener('pointermove', function () { self.onAnchorMove(anchorEl) })
           anchorEl.addEventListener('pointerleave', function () {
             self.hidePreview()
-            anchorEl.style.width = ''
-            anchorEl.classList.remove('dsh-mm-hot')
+            self.scheduleReset()
           })
         })(dot)
         dot.addEventListener('click', function (ev) { self.onJump(ev.currentTarget) })
@@ -387,31 +389,65 @@ window.__ModuleLoader__.load({
     }
 
     // GPT-style fish-eye: bar widths follow a bell curve around the cursor.
+    // Free tracking over the rail; while the pointer stays inside an enlarged
+    // bar, the peak is pinned to that bar's center (sticky), and leaving the
+    // rail only schedules a short delayed reset — the effect never pops away
+    // while the mouse is still within the enlarged region.
     MinimapController.prototype.onRailMove = function (ev) {
       var self = this
+      if (this.resetTimer) { clearTimeout(this.resetTimer); this.resetTimer = null }
       if (this.fisheyeRaf) return
       this.fisheyeRaf = true
       requestAnimationFrame(function () {
         self.fisheyeRaf = false
         if (self.disposed) return
-        try {
-          var railRect = self.rail.getBoundingClientRect()
-          var mouseY = ev.clientY
-          for (var i = 0; i < self.anchors.length; i++) {
-            var el = self.anchors[i].anchorEl
-            if (!el) continue
-            var r = el.getBoundingClientRect()
-            var d = Math.abs(r.top + r.height / 2 - mouseY)
-            var w = BASE_W + (PEAK_W - BASE_W) * Math.exp(-(d * d) / (2 * FISHEYE_SIGMA * FISHEYE_SIGMA))
-            el.style.width = Math.round(w) + 'px'
-            el.classList.toggle('dsh-mm-hot', d < 6)
-            el.classList.toggle('dsh-mm-enlarged', w > BASE_W + 4)
-          }
-        } catch (e) { /* ignore */ }
+        self.fishY = ev.clientY
+        self.applyFishEye(ev.clientY)
       })
     }
 
-    MinimapController.prototype.onRailLeave = function () {
+    MinimapController.prototype.onAnchorMove = function (anchorEl) {
+      var self = this
+      if (this.resetTimer) { clearTimeout(this.resetTimer); this.resetTimer = null }
+      if (this.fisheyeRaf) return
+      this.fisheyeRaf = true
+      requestAnimationFrame(function () {
+        self.fisheyeRaf = false
+        if (self.disposed) return
+        var r = anchorEl.getBoundingClientRect()
+        var y = r.top + r.height / 2
+        self.fishY = y
+        self.applyFishEye(y)
+      })
+    }
+
+    MinimapController.prototype.applyFishEye = function (y) {
+      try {
+        for (var i = 0; i < this.anchors.length; i++) {
+          var el = this.anchors[i].anchorEl
+          if (!el) continue
+          var r = el.getBoundingClientRect()
+          var d = Math.abs(r.top + r.height / 2 - y)
+          var w = BASE_W + (PEAK_W - BASE_W) * Math.exp(-(d * d) / (2 * FISHEYE_SIGMA * FISHEYE_SIGMA))
+          el.style.width = Math.round(w) + 'px'
+          el.classList.toggle('dsh-mm-hot', d < 6)
+          el.classList.toggle('dsh-mm-enlarged', w > BASE_W + 4)
+        }
+      } catch (e) { /* ignore */ }
+    }
+
+    MinimapController.prototype.scheduleReset = function () {
+      var self = this
+      if (this.resetTimer) clearTimeout(this.resetTimer)
+      this.resetTimer = setTimeout(function () {
+        self.resetTimer = null
+        if (self.disposed) return
+        self.resetFishEye()
+      }, 250)
+    }
+
+    MinimapController.prototype.resetFishEye = function () {
+      this.fishY = null
       for (var i = 0; i < this.anchors.length; i++) {
         var el = this.anchors[i].anchorEl
         if (el) {
@@ -419,6 +455,10 @@ window.__ModuleLoader__.load({
           el.classList.remove('dsh-mm-hot', 'dsh-mm-enlarged')
         }
       }
+    }
+
+    MinimapController.prototype.onRailLeave = function () {
+      this.scheduleReset()
       this.hidePreview()
     }
 
@@ -527,6 +567,7 @@ window.__ModuleLoader__.load({
       if (this.disposed) return
       this.disposed = true
       if (this.highlightTimer) clearTimeout(this.highlightTimer)
+      if (this.resetTimer) clearTimeout(this.resetTimer)
       if (this.observer) this.observer.disconnect()
       if (this.scroll && this.onScrollBound) this.scroll.removeEventListener('scroll', this.onScrollBound)
       if (this.rail && this.onRailMoveBound) this.rail.removeEventListener('pointermove', this.onRailMoveBound)
