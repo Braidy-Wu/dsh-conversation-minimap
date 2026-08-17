@@ -38,5 +38,13 @@
       "platform": "web",
       "immediately": false
     }
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Braidy-Wu/dsh-conversation-minimap.git"
+  },
+  "homepage": "https://github.com/Braidy-Wu/dsh-conversation-minimap#readme",
+  "bugs": {
+    "url": "https://github.com/Braidy-Wu/dsh-conversation-minimap/issues"
   }
 }
