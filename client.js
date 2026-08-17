@@ -322,17 +322,29 @@ window.__ModuleLoader__.load({
       this.updateShift()
     }
 
-    // Always center the anchor column in the rail. When the column overflows
-    // the rail (many prompts / short window), the excess is clipped and faded
-    // symmetrically at BOTH ends — the anchors converge toward the middle of
-    // the dialog and never exceed the rail range.
+    // Anchor-column placement:
+    //   - fits the rail -> centered, grows outward from the middle;
+    //   - overflows (many prompts / short window) -> the window centers on the
+    //     ACTIVE anchor (the current prompt), clamped so no empty space shows:
+    //     at the top of the conversation the earliest anchors are visible, at
+    //     the bottom the latest ones — the current prompt's anchor is always
+    //     in view and never exceeds the rail range (edges fade via the mask).
     MinimapController.prototype.updateShift = function () {
       if (!this.inner || !this.anchors.length) return
       var n = this.anchors.length
       var columnH = n * ANCHOR_H + (n - 1) * ANCHOR_GAP
       var railH = this.rail.getBoundingClientRect().height
       if (!railH) return
-      var shift = (railH - columnH) / 2
+      var shift
+      if (columnH <= railH) {
+        shift = (railH - columnH) / 2
+      } else {
+        // Window over the column: [w, w + railH], active centered when possible.
+        var activeCenter = this.activeIndex * (ANCHOR_H + ANCHOR_GAP) + ANCHOR_H / 2
+        var overflow = columnH - railH
+        var w = Math.max(0, Math.min(overflow, activeCenter - railH / 2))
+        shift = -w // moving the column UP reveals later anchors
+      }
       this.inner.style.transform = 'translateY(' + Math.round(shift) + 'px)'
     }
 
