@@ -40,8 +40,8 @@ window.__ModuleLoader__.load({
     var ANCHOR_H = 3 // anchor bar height, px (keep in sync with CSS)
     var ANCHOR_GAP = 12 // fixed interval between anchors, px (keep in sync with CSS)
     var BASE_W = 12 // anchor base width, px
-    var PEAK_W = 40 // fish-eye peak width, px (mouse-over bar)
-    var FISHEYE_SIGMA = 15 // gaussian sigma for the bell curve, px
+    var PEAK_W = 56 // fish-eye peak width, px (mouse-over bar)
+    var FISHEYE_SIGMA = 18 // gaussian sigma for the bell curve, px
     var USER_KINDS = { user: true, steering: true }
     var SCROLL_SEL = '[data-conversation-scroll]'
     var ANCHOR_SEL = '[data-chat-anchor-key]'
@@ -55,9 +55,10 @@ window.__ModuleLoader__.load({
       '.dsh-mm-rail{position:absolute;left:0;width:16px;display:flex;flex-direction:column;pointer-events:auto;overflow:hidden;-webkit-mask-image:linear-gradient(to bottom,transparent 0,transparent 22px,#000 54px,#000 calc(100% - 54px),transparent calc(100% - 22px),transparent 100%);mask-image:linear-gradient(to bottom,transparent 0,transparent 22px,#000 54px,#000 calc(100% - 54px),transparent calc(100% - 22px),transparent 100%)}',
       '.dsh-mm-inner{display:flex;flex-direction:column;align-items:center;gap:' + ANCHOR_GAP + 'px;pointer-events:none;will-change:transform}',
       '.dsh-mm-gap{flex:1 1 0;min-height:0}',
-      '.dsh-mm-anchor{flex:0 0 ' + ANCHOR_H + 'px;box-sizing:border-box;width:' + BASE_W + 'px;height:' + ANCHOR_H + 'px;border-radius:2px;background:rgba(128,128,128,.5);cursor:pointer;pointer-events:auto;transition:width .12s ease-out,background-color .12s ease-out}',
-      '.dsh-mm-anchor.dsh-mm-hot{background:rgba(45,45,45,.92)}',
-      '.dsh-mm-anchor.dsh-mm-active{background:var(--dsw-static-deepseek-500,#4176e6)}',
+      '.dsh-mm-anchor{flex:0 0 ' + ANCHOR_H + 'px;box-sizing:border-box;width:' + BASE_W + 'px;height:' + ANCHOR_H + 'px;border-radius:2px;background:rgba(128,128,128,.5);cursor:pointer;pointer-events:auto;transition:width .18s ease-out,background-color .18s ease-out}',
+      '.dsh-mm-anchor.dsh-mm-hot{background:rgba(35,35,35,.95)}',
+      '.dsh-mm-anchor.dsh-mm-enlarged{background:rgba(90,90,90,.7)}',
+      '.dsh-mm-anchor.dsh-mm-active{background:var(--dsw-static-deepseek-500,#4176e6);box-shadow:0 0 5px rgba(65,118,230,.85)}',
       '.dsh-mm-anchor.dsh-mm-jumped{background:var(--dsw-static-green-500,#22c55e)}',
       '.dsh-mm-preview{position:fixed;z-index:1000;box-sizing:border-box;max-width:380px;max-height:50vh;padding:8px 10px;border-radius:8px;border:1px solid var(--dsw-alias-border-l2,rgba(128,128,128,.3));background:var(--dsw-alias-bg-layer-2,#ffffff);box-shadow:var(--dsw-shadow-lv2,0 6px 24px rgba(0,0,0,.16));color:var(--dsw-alias-label-primary,#1f1f1f);font:12px/1.5 var(--ds-font-family-code,"SF Mono",Consolas,monospace);pointer-events:none;white-space:pre-wrap;word-break:break-word;overflow-y:auto}',
       '.dsh-mm-preview-label{display:block;margin-bottom:2px;color:var(--dsw-alias-label-caption,rgba(120,120,120,.8));font:10px/1.4 var(--ds-font-family-code,monospace)}',
@@ -115,6 +116,7 @@ window.__ModuleLoader__.load({
       this.fisheyeRaf = false
       this.onRailMoveBound = null
       this.onRailLeaveBound = null
+      this.jumpedDot = null
       this.rafPending = false
       this.syncing = false
       this.disposed = false
@@ -399,7 +401,8 @@ window.__ModuleLoader__.load({
             var d = Math.abs(r.top + r.height / 2 - mouseY)
             var w = BASE_W + (PEAK_W - BASE_W) * Math.exp(-(d * d) / (2 * FISHEYE_SIGMA * FISHEYE_SIGMA))
             el.style.width = Math.round(w) + 'px'
-            el.classList.toggle('dsh-mm-hot', d < 5)
+            el.classList.toggle('dsh-mm-hot', d < 6)
+            el.classList.toggle('dsh-mm-enlarged', w > BASE_W + 4)
           }
         } catch (e) { /* ignore */ }
       })
@@ -410,7 +413,7 @@ window.__ModuleLoader__.load({
         var el = this.anchors[i].anchorEl
         if (el) {
           el.style.width = ''
-          el.classList.remove('dsh-mm-hot')
+          el.classList.remove('dsh-mm-hot', 'dsh-mm-enlarged')
         }
       }
       this.hidePreview()
@@ -495,13 +498,20 @@ window.__ModuleLoader__.load({
           a.row.scrollIntoView()
         }
         a.row.classList.add('dsh-mm-jump-highlight')
+        // Never leave a green dot behind: clear any previous jump state first.
+        if (this.jumpedDot && this.jumpedDot !== dot) {
+          this.jumpedDot.classList.remove('dsh-mm-jumped')
+        }
         dot.classList.add('dsh-mm-jumped')
+        this.jumpedDot = dot
         if (this.highlightTimer) clearTimeout(this.highlightTimer)
+        var target = a // captured per-jump (break stops reassignment)
         this.highlightTimer = setTimeout(function () {
-          a.row.classList.add('dsh-mm-fade')
+          target.row.classList.add('dsh-mm-fade')
           setTimeout(function () {
-            a.row.classList.remove('dsh-mm-jump-highlight', 'dsh-mm-fade')
+            target.row.classList.remove('dsh-mm-jump-highlight', 'dsh-mm-fade')
             dot.classList.remove('dsh-mm-jumped')
+            if (self.jumpedDot === dot) self.jumpedDot = null
           }, 300)
         }, HIGHLIGHT_MS)
         break
