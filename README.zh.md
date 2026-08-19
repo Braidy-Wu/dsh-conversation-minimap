@@ -22,6 +22,14 @@ DeepSeek Harness (DSH) Web GUI 插件：**Prompt 导航迷你地图（Prompt-bas
 
 ## 安装
 
+### 方式一：npm（推荐）
+
+```sh
+dsh plugin --profile web add dsh-conversation-minimap
+```
+
+### 方式二：从 GitHub 安装
+
 ```sh
 dsh plugin --profile web add github:Braidy-Wu/dsh-conversation-minimap
 ```

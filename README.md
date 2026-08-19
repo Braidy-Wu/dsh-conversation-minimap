@@ -15,6 +15,14 @@ A DeepSeek Harness (DSH) Web GUI plugin: **Prompt-based Conversation Minimap** �
 
 ## Installation
 
+### Option 1 — npm (recommended)
+
+```sh
+dsh plugin --profile web add dsh-conversation-minimap
+```
+
+### Option 2 — from GitHub
+
 ```sh
 dsh plugin --profile web add github:Braidy-Wu/dsh-conversation-minimap
 ```
