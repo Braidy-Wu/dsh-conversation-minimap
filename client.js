@@ -58,6 +58,7 @@ window.__ModuleLoader__.load({
     var MIN_RAIL_H = 80 // keep a usable rail even in very short windows
     var FADE_EDGE = 22 // mask: fully transparent until this px from the rail edges
     var FADE_SOLID = 54 // mask: fully opaque past this px from the rail edges
+    var SEAT_MASK = 'linear-gradient(to bottom,transparent 0,transparent ' + FADE_EDGE + 'px,#000 ' + FADE_SOLID + 'px,#000 calc(100% - ' + FADE_SOLID + 'px),transparent calc(100% - ' + FADE_EDGE + 'px),transparent 100%)'
     var USER_KINDS = { user: true, steering: true }
     var SCROLL_SEL = '[data-conversation-scroll]'
     var ANCHOR_SEL = '[data-chat-anchor-key]'
@@ -69,7 +70,7 @@ window.__ModuleLoader__.load({
     // ------------------------------------------------------------------
     var STYLE_ID = 'dsh-conversation-minimap-style'
     var css = [
-      '.dsh-mm-seat{position:absolute;left:' + RAIL_LEFT + 'px;width:' + SEAT_W + 'px;pointer-events:none;z-index:6;overflow:hidden;-webkit-mask-image:linear-gradient(to bottom,transparent 0,transparent ' + FADE_EDGE + 'px,#000 ' + FADE_SOLID + 'px,#000 calc(100% - ' + FADE_SOLID + 'px),transparent calc(100% - ' + FADE_EDGE + 'px),transparent 100%);mask-image:linear-gradient(to bottom,transparent 0,transparent ' + FADE_EDGE + 'px,#000 ' + FADE_SOLID + 'px,#000 calc(100% - ' + FADE_SOLID + 'px),transparent calc(100% - ' + FADE_EDGE + 'px),transparent 100%)}',
+      '.dsh-mm-seat{position:absolute;left:' + RAIL_LEFT + 'px;width:' + SEAT_W + 'px;pointer-events:none;z-index:6;overflow:hidden}',
       '.dsh-mm-rail{position:absolute;left:0;width:16px;display:flex;flex-direction:column;pointer-events:auto;overflow:visible}',
       '.dsh-mm-inner{display:flex;flex-direction:column;align-items:flex-start;gap:' + ANCHOR_GAP + 'px;pointer-events:none;will-change:transform}',
       '.dsh-mm-anchor{flex:0 0 ' + ANCHOR_H + 'px;box-sizing:border-box;width:' + BASE_W + 'px;height:' + ANCHOR_H + 'px;margin-left:2px;border-radius:2px;background:rgba(128,128,128,.5);cursor:pointer;pointer-events:auto;transition:width .18s ease-out,background-color .18s ease-out}',
@@ -390,6 +391,13 @@ window.__ModuleLoader__.load({
       var railH = this.rail.getBoundingClientRect().height
       if (!railH) return
       var shift
+      var overflowMode = columnH > railH
+      // Edge fade only when the window overflows (INSET keeps edge anchors
+      // >= FADE_SOLID+6 px clear); when the column fits — even tightly — no
+      // mask, so the outermost anchors are never faded out.
+      var mask = overflowMode ? SEAT_MASK : 'none'
+      this.seat.style.webkitMaskImage = mask
+      this.seat.style.maskImage = mask
       if (columnH <= railH) {
         shift = (railH - columnH) / 2
       } else {
