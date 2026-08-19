@@ -640,8 +640,11 @@ window.__ModuleLoader__.load({
 
       var rect = dot.getBoundingClientRect()
       var pr = el.getBoundingClientRect()
-      var left = rect.left - pr.width - 10
-      if (left < 8) left = rect.right + 10
+      // Always show to the RIGHT of the anchor (ChatGPT style): the rail sits
+      // at the left edge of the conversation, so the left side is the sidebar
+      // area; the right side is the stable, spacious chat area.
+      var left = rect.right + 10
+      if (left + pr.width > window.innerWidth - 8) left = Math.max(8, window.innerWidth - pr.width - 8)
       var top = rect.top + rect.height / 2 - pr.height / 2
       top = Math.max(8, Math.min(top, window.innerHeight - pr.height - 8))
       el.style.left = left + 'px'
