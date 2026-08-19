@@ -135,6 +135,7 @@ window.__ModuleLoader__.load({
       this.list = null
       this.observer = null
       this.previewEl = null
+      this.previewKey = null
       this.hidePreviewTimer = null
       this.highlightTimer = null
       this.fisheyeRaf = false
@@ -477,6 +478,7 @@ window.__ModuleLoader__.load({
         self.fisheyeRaf = false
         if (self.disposed) return
         self.applyFishEye(ev.clientY)
+        self.updatePreviewHover(ev.clientY)
       })
     }
 
@@ -491,6 +493,7 @@ window.__ModuleLoader__.load({
         var r = anchorEl.getBoundingClientRect()
         var y = r.top + r.height / 2
         self.applyFishEye(y)
+        self.updatePreviewHover(y)
       })
     }
 
@@ -589,11 +592,32 @@ window.__ModuleLoader__.load({
     MinimapController.prototype.onHover = function (dot) {
       var key = dot.getAttribute('data-mm-key')
       this.cancelHidePreview()
+      this.previewKey = key
       for (var i = 0; i < this.anchors.length; i++) {
         if (this.anchors[i].key === key) {
           this.showPreview(this.anchors[i].row, dot)
           return
         }
+      }
+    }
+
+    // Keep the preview alive while the pointer hovers a small buffer zone
+    // around the anchor (moving slightly up/down off the anchor should not
+    // dismiss the preview).
+    MinimapController.prototype.updatePreviewHover = function (y) {
+      if (!this.previewKey || !this.anchors.length) return
+      var BUFFER = 12 // px above/below the anchor bar
+      for (var i = 0; i < this.anchors.length; i++) {
+        if (this.anchors[i].key !== this.previewKey) continue
+        var el = this.anchors[i].anchorEl
+        if (!el) return
+        var r = el.getBoundingClientRect()
+        if (y >= r.top - BUFFER && y <= r.bottom + BUFFER) {
+          this.cancelHidePreview()
+        } else {
+          this.scheduleHidePreview()
+        }
+        return
       }
     }
 
@@ -629,6 +653,7 @@ window.__ModuleLoader__.load({
         this.previewEl.remove()
         this.previewEl = null
       }
+      this.previewKey = null
     }
 
     // Pull older pages until the target row exists in the DOM (bounded).
