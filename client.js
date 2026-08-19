@@ -592,7 +592,6 @@ window.__ModuleLoader__.load({
     MinimapController.prototype.onHover = function (dot) {
       var key = dot.getAttribute('data-mm-key')
       this.cancelHidePreview()
-      this.previewKey = key
       for (var i = 0; i < this.anchors.length; i++) {
         if (this.anchors[i].key === key) {
           this.showPreview(this.anchors[i].row, dot)
@@ -623,6 +622,7 @@ window.__ModuleLoader__.load({
 
     MinimapController.prototype.showPreview = function (row, dot) {
       this.hidePreview()
+      this.previewKey = dot.getAttribute('data-mm-key')
       var el = document.createElement('div')
       el.className = 'dsh-mm-preview'
       var label = document.createElement('span')
