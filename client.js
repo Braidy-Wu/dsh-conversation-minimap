@@ -61,6 +61,8 @@ window.__ModuleLoader__.load({
     var USER_KINDS = { user: true, steering: true }
     var SCROLL_SEL = '[data-conversation-scroll]'
     var ANCHOR_SEL = '[data-chat-anchor-key]'
+    var REDUCED_MOTION = typeof window !== 'undefined' && typeof window.matchMedia === 'function' &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches
 
     // ------------------------------------------------------------------
     // Styles
@@ -79,7 +81,10 @@ window.__ModuleLoader__.load({
       '.dsh-mm-preview-label{display:block;margin-bottom:2px;color:var(--dsw-alias-label-caption,rgba(120,120,120,.8));font:10px/1.4 var(--ds-font-family-code,monospace)}',
       '.dsh-mm-syncing{position:absolute;bottom:-2px;left:0;width:16px;text-align:center;color:var(--dsw-alias-label-caption,rgba(120,120,120,.8));font-size:9px;line-height:1;display:none;pointer-events:none}',
       '.dsh-mm-jump-highlight{outline:2px solid var(--dsw-static-deepseek-500,#4176e6);outline-offset:-2px;border-radius:8px;transition:outline-color .3s}',
-      '.dsh-mm-jump-highlight.dsh-mm-fade{outline-color:transparent}'
+      '.dsh-mm-jump-highlight.dsh-mm-fade{outline-color:transparent}',
+      '@media (max-width:767px){.dsh-mm-seat{display:none!important}}',
+      '@media (prefers-reduced-motion:reduce){.dsh-mm-anchor{transition:none}.dsh-mm-jump-highlight{transition:none}.dsh-mm-rail{transition:none}}',
+      '.dsh-mm-anchor:focus-visible{outline:2px solid var(--dsw-static-deepseek-500,#4176e6);outline-offset:1px}'
     ].join('\n')
 
     function ensureStyle() {
@@ -343,11 +348,20 @@ window.__ModuleLoader__.load({
         dot.className = 'dsh-mm-anchor'
         dot.setAttribute('data-mm-key', a.key)
         ;(function (anchorEl) {
+          anchorEl.setAttribute('role', 'button')
+          anchorEl.setAttribute('tabindex', '0')
+          anchorEl.setAttribute('aria-label', '跳转到第 ' + (i + 1) + ' 轮：' + previewText(a.row).slice(0, 60))
           anchorEl.addEventListener('pointerenter', function () { self.onHover(anchorEl) })
           anchorEl.addEventListener('pointermove', function () { self.onAnchorMove(anchorEl) })
           anchorEl.addEventListener('pointerleave', function () {
             self.hidePreview()
             self.scheduleReset()
+          })
+          anchorEl.addEventListener('keydown', function (ev) {
+            if (ev.key === 'Enter' || ev.key === ' ') {
+              ev.preventDefault()
+              self.onJump(anchorEl)
+            }
           })
         })(dot)
         dot.addEventListener('click', function (ev) { self.onJump(ev.currentTarget) })
@@ -587,18 +601,37 @@ window.__ModuleLoader__.load({
       }
     }
 
+    // Pull older pages until the target row exists in the DOM (bounded).
+    MinimapController.prototype.ensureRowInDom = function (key, done) {
+      var self = this
+      var conv = this.sessionConversation()
+      if (!conv || typeof conv.loadOlder !== 'function') { done(null); return }
+      var guard = 0
+      ;(function step() {
+        if (self.disposed) { done(null); return }
+        var row = self.scroll.querySelector(ANCHOR_SEL + '[data-chat-anchor-key="' + CSS.escape(key) + '"]')
+        if (row) { done(row); return }
+        if (guard++ >= SYNC_MAX_PAGES) { done(null); return }
+        conv.loadOlder().then(function () {
+          return sleep(SYNC_PAGE_DELAY_MS)
+        }).then(step).catch(function () { done(null) })
+      })()
+    }
+
     MinimapController.prototype.onJump = function (dot) {
       var key = dot.getAttribute('data-mm-key')
       var self = this
       for (var i = 0; i < this.anchors.length; i++) {
         var a = this.anchors[i]
         if (a.key !== key) continue
-        try {
-          a.row.scrollIntoView({ behavior: 'smooth', block: 'start' })
-        } catch (e) {
-          a.row.scrollIntoView()
+        var jumpTo = function (row) {
+          if (!row) return
+          try {
+            row.scrollIntoView({ behavior: REDUCED_MOTION ? 'auto' : 'smooth', block: 'center' })
+          } catch (e) {
+            row.scrollIntoView()
+          }
         }
-        a.row.classList.add('dsh-mm-jump-highlight')
         // Never leave a green dot behind: clear any previous jump state first.
         if (this.jumpedDot && this.jumpedDot !== dot) {
           this.jumpedDot.classList.remove('dsh-mm-jumped')
@@ -608,13 +641,20 @@ window.__ModuleLoader__.load({
         if (this.highlightTimer) clearTimeout(this.highlightTimer)
         var target = a // captured per-jump (break stops reassignment)
         this.highlightTimer = setTimeout(function () {
-          target.row.classList.add('dsh-mm-fade')
+          if (target.row.isConnected) target.row.classList.add('dsh-mm-fade')
           setTimeout(function () {
-            target.row.classList.remove('dsh-mm-jump-highlight', 'dsh-mm-fade')
+            if (target.row.isConnected) target.row.classList.remove('dsh-mm-jump-highlight', 'dsh-mm-fade')
             dot.classList.remove('dsh-mm-jumped')
             if (self.jumpedDot === dot) self.jumpedDot = null
           }, 300)
         }, HIGHLIGHT_MS)
+        // The row may not be in the DOM yet (history above the sync cap) —
+        // pull older pages on demand, then scroll to the fresh row.
+        if (a.row.isConnected) {
+          jumpTo(a.row)
+        } else {
+          this.ensureRowInDom(key, jumpTo)
+        }
         break
       }
     }
