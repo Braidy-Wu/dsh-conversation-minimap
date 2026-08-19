@@ -12,7 +12,11 @@ DeepSeek Harness (DSH) Web GUI 插件：**Prompt 导航迷你地图（Prompt-bas
 - **位置感知**：滚动对话时蓝色高亮跟随当前 Prompt（Prompt 中线越过页面中线时切换）；
   窗口压缩后仍自动贴底/跟随，可见锚点始终对应当前所在位置
 - **交互**：悬停显示完整 Prompt 预览；点击平滑滚动跳转到对应消息并高亮 2 秒（连续点击不留残影）
-- **全历史**：自动通过官方 `loadOlder` API 拉取完整历史，长对话的所有 Prompt 都能跳转
+- **全历史**：自动通过官方 `loadOlder` API 拉取完整历史，长对话的所有 Prompt 都能跳转；
+  目标行不在 DOM 时点击按需补拉历史再跳转（`block: center` 居中定位）
+- **体验细节**：视口 ≤767px 自动隐藏（移动端不遮挡）；遵循系统「减弱动态效果」
+  （prefers-reduced-motion 时禁用鱼眼/平滑滚动）；ARIA 无障碍（role=button、
+  aria-label、键盘 Enter/空格跳转）
 
 ![screenshot](docs/screenshot.png)
 

@@ -631,6 +631,7 @@ window.__ModuleLoader__.load({
           } catch (e) {
             row.scrollIntoView()
           }
+          row.classList.add('dsh-mm-jump-highlight')
         }
         // Never leave a green dot behind: clear any previous jump state first.
         if (this.jumpedDot && this.jumpedDot !== dot) {
