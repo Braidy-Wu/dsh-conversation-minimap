@@ -137,7 +137,10 @@
               fail('preview not shown on hover')
             }
             first.dispatchEvent(new PointerEvent('pointerleave', { bubbles: true }))
-            if (document.querySelector('.dsh-mm-preview')) fail('preview not hidden on leave')
+            // hover-group: leaving the anchor starts a 200ms grace window (the
+            // mouse may be moving onto the preview), so the preview survives.
+            if (document.querySelector('.dsh-mm-preview')) ok('preview survives grace window on leave (hover-group)')
+            else fail('preview vanished immediately on leave')
 
             // 7. Click the LAST anchor -> scroll + highlight.
             var last = document.querySelectorAll('.dsh-mm-anchor')[5]

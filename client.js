@@ -78,7 +78,7 @@ window.__ModuleLoader__.load({
       '.dsh-mm-anchor.dsh-mm-enlarged{background:rgba(90,90,90,.7)}',
       '.dsh-mm-anchor.dsh-mm-active{background:var(--dsw-static-deepseek-500,#4176e6);box-shadow:0 0 5px rgba(65,118,230,.85)}',
       '.dsh-mm-anchor.dsh-mm-jumped{background:var(--dsw-static-green-500,#22c55e)}',
-      '.dsh-mm-preview{position:fixed;z-index:1000;box-sizing:border-box;max-width:380px;max-height:50vh;padding:8px 10px;border-radius:8px;border:1px solid var(--dsw-alias-border-l2,rgba(128,128,128,.3));background:var(--dsw-alias-bg-layer-2,#ffffff);box-shadow:var(--dsw-shadow-lv2,0 6px 24px rgba(0,0,0,.16));color:var(--dsw-alias-label-primary,#1f1f1f);font:12px/1.5 var(--ds-font-family-code,"SF Mono",Consolas,monospace);pointer-events:none;white-space:pre-wrap;word-break:break-word;overflow-y:auto}',
+      '.dsh-mm-preview{position:fixed;z-index:1000;box-sizing:border-box;max-width:380px;max-height:50vh;padding:8px 10px;border-radius:8px;border:1px solid var(--dsw-alias-border-l2,rgba(128,128,128,.3));background:var(--dsw-alias-bg-layer-2,#ffffff);box-shadow:var(--dsw-shadow-lv2,0 6px 24px rgba(0,0,0,.16));color:var(--dsw-alias-label-primary,#1f1f1f);font:12px/1.5 var(--ds-font-family-code,"SF Mono",Consolas,monospace);pointer-events:auto;user-select:text;white-space:pre-wrap;word-break:break-word;overflow-y:auto}',
       '.dsh-mm-preview-label{display:block;margin-bottom:2px;color:var(--dsw-alias-label-caption,rgba(120,120,120,.8));font:10px/1.4 var(--ds-font-family-code,monospace)}',
       '.dsh-mm-syncing{position:absolute;bottom:-2px;left:0;width:16px;text-align:center;color:var(--dsw-alias-label-caption,rgba(120,120,120,.8));font-size:9px;line-height:1;display:none;pointer-events:none}',
       '.dsh-mm-jump-highlight{outline:2px solid var(--dsw-static-deepseek-500,#4176e6);outline-offset:-2px;border-radius:8px;transition:outline-color .3s}',
@@ -135,6 +135,7 @@ window.__ModuleLoader__.load({
       this.list = null
       this.observer = null
       this.previewEl = null
+      this.hidePreviewTimer = null
       this.highlightTimer = null
       this.fisheyeRaf = false
       this.onRailMoveBound = null
@@ -355,7 +356,7 @@ window.__ModuleLoader__.load({
           anchorEl.addEventListener('pointerenter', function () { self.onHover(anchorEl) })
           anchorEl.addEventListener('pointermove', function () { self.onAnchorMove(anchorEl) })
           anchorEl.addEventListener('pointerleave', function () {
-            self.hidePreview()
+            self.scheduleHidePreview()
             self.scheduleReset()
           })
           anchorEl.addEventListener('keydown', function (ev) {
@@ -530,7 +531,7 @@ window.__ModuleLoader__.load({
 
     MinimapController.prototype.onRailLeave = function () {
       this.scheduleReset()
-      this.hidePreview()
+      this.scheduleHidePreview()
     }
 
     MinimapController.prototype.onScroll = function () {
@@ -568,8 +569,26 @@ window.__ModuleLoader__.load({
       this.updateShift()
     }
 
+    MinimapController.prototype.scheduleHidePreview = function (delay) {
+      var self = this
+      if (this.hidePreviewTimer) clearTimeout(this.hidePreviewTimer)
+      this.hidePreviewTimer = setTimeout(function () {
+        self.hidePreviewTimer = null
+        if (self.disposed) return
+        self.hidePreview()
+      }, delay || 200)
+    }
+
+    MinimapController.prototype.cancelHidePreview = function () {
+      if (this.hidePreviewTimer) {
+        clearTimeout(this.hidePreviewTimer)
+        this.hidePreviewTimer = null
+      }
+    }
+
     MinimapController.prototype.onHover = function (dot) {
       var key = dot.getAttribute('data-mm-key')
+      this.cancelHidePreview()
       for (var i = 0; i < this.anchors.length; i++) {
         if (this.anchors[i].key === key) {
           this.showPreview(this.anchors[i].row, dot)
@@ -591,6 +610,9 @@ window.__ModuleLoader__.load({
       el.appendChild(text)
       document.body.appendChild(el)
       this.previewEl = el
+      var self = this
+      el.addEventListener('pointerenter', function () { self.cancelHidePreview() })
+      el.addEventListener('pointerleave', function () { self.scheduleHidePreview() })
 
       var rect = dot.getBoundingClientRect()
       var pr = el.getBoundingClientRect()
@@ -673,6 +695,7 @@ window.__ModuleLoader__.load({
       this.disposed = true
       if (this.highlightTimer) clearTimeout(this.highlightTimer)
       if (this.resetTimer) clearTimeout(this.resetTimer)
+      if (this.hidePreviewTimer) clearTimeout(this.hidePreviewTimer)
       if (this.observer) this.observer.disconnect()
       if (this.scroll && this.onScrollBound) this.scroll.removeEventListener('scroll', this.onScrollBound)
       if (this.rail && this.onRailMoveBound) this.rail.removeEventListener('pointermove', this.onRailMoveBound)
